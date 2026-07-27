@@ -1,19 +1,53 @@
-# README
+# spotmini
 
-## About
+A tiny, frameless, always-on-top Spotify now-playing strip built with Go and Wails.
 
-This is the official Wails Vanilla template.
+## Features
 
-You can configure the project by editing `wails.json`. More information about the project settings can be found
-here: https://wails.io/docs/reference/project-config
+- Small corner-sized window, no title bar, stays on top of other apps
+- Shows current song, artist, and live progress
+- Play/pause control
+- Background OAuth login with automatic token refresh
+- Draggable window despite having no title bar
 
-## Live Development
+## Setup
 
-To run in live development mode, run `wails dev` in the project directory. This will run a Vite development
-server that will provide very fast hot reload of your frontend changes. If you want to develop in a browser
-and have access to your Go methods, there is also a dev server that runs on http://localhost:34115. Connect
-to this in your browser, and you can call your Go code from devtools.
+1. Create an app on the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) and grab your Client ID and Client Secret.
+2. Set the app's Redirect URI to:
+   ```
+   http://127.0.0.1:8888/callback
+   ```
+3. Create a `.env` file in the project root:
+   ```
+   clientID=your_client_id_here
+   clientSecret=your_client_secret_here
+   ```
+4. Install dependencies:
+   ```
+   go mod tidy
+   cd frontend && npm install
+   ```
+
+## Running
+
+```
+wails dev
+```
+
+On first run, a browser window opens for Spotify login. After that, a saved token is refreshed automatically and no further login is needed until it's revoked.
 
 ## Building
 
-To build a redistributable, production mode package, use `wails build`.
+```
+wails build
+```
+
+## Tech
+
+- Go backend, talking directly to the Spotify Web API
+- [Wails v2](https://wails.io) for the frameless desktop window
+- Vanilla HTML/CSS/JS frontend
+
+## Status
+
+Actively in progress - global hotkeys, previous/next/shuffle controls, and playlist selection are planned next.
