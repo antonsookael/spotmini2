@@ -26,3 +26,16 @@ html, body {
   text-overflow: ellipsis;
   --wails-draggable: drag; /* lets you drag the frameless window by this area */
 }
+#track-info {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#timer {
+  flex-shrink: 0;
+  margin-left: 12px;
+  white-space: nowrap;
+}

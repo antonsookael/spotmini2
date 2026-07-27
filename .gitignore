@@ -4,5 +4,4 @@ frontend/dist
 .env
 token.json
 
-spotmini.exe
 /frontend/wailsjs

@@ -1,7 +1,8 @@
 import { EventsOn } from '../wailsjs/runtime/runtime'
 import { GetNowPlaying } from '../wailsjs/go/main/App'
 
-const nowPlayingEl = document.getElementById('now-playing')
+const trackInfoEl = document.getElementById('track-info')
+const timerEl = document.getElementById('timer')
 
 let currentSeconds = 0
 let totalSeconds = 0
@@ -17,11 +18,14 @@ function formatTime(totalSecs) {
 
 function render() {
   if (!currentSong) {
-    nowPlayingEl.textContent = 'Nothing playing'
+    trackInfoEl.textContent = 'Nothing playing'
+    timerEl.textContent = ''
     return
   }
-  nowPlayingEl.textContent =
-    `${currentSong} - ${currentArtist}  ${formatTime(currentSeconds)}/${formatTime(totalSeconds)}`
+
+  trackInfoEl.textContent = `${currentSong} - ${currentArtist}`
+  timerEl.textContent =
+    `${formatTime(currentSeconds)}/${formatTime(totalSeconds)}`
 }
 
 // fetchNowPlaying calls into Go, which calls Spotify, and resets our
@@ -41,7 +45,8 @@ async function fetchNowPlaying() {
     isCurrentlyPlaying = state.is_playing
     render()
   } catch (err) {
-    nowPlayingEl.textContent = 'Error loading playback'
+    trackInfoEl.textContent = 'Error loading playback'
+    timerEl.textContent = ''
   }
 }
 
