@@ -87,3 +87,13 @@ setInterval(() => {
 EventsOn('logged-in', () => {
   fetchNowPlaying()
 })
+
+// Listen for the toggle-settings event emitted from Go when Ctrl+Alt+C is pressed
+EventsOn('toggle-settings', (isExpanded) => {
+  const settingsPanel = document.getElementById('settings-panel')
+  if (isExpanded) {
+    settingsPanel.classList.remove('hidden')
+  } else {
+    settingsPanel.classList.add('hidden')
+  }
+})

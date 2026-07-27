@@ -22,7 +22,6 @@ func main() {
 		MinWidth:    320,
 		MinHeight:   50,
 		MaxWidth:    320,
-		MaxHeight:   50,
 		Frameless:   true,
 		AlwaysOnTop: true,
 		AssetServer: &assetserver.Options{
@@ -34,8 +33,6 @@ func main() {
 			app,
 		},
 		Windows: &windows.Options{
-			// No rounded corners / Aero shadow - sharp edges suit a
-			// thin strip sitting flush in a screen corner.
 			DisableFramelessWindowDecorations: true,
 		},
 	})

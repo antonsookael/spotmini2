@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"golang.design/x/hotkey"
 
 	"spotmini-gui/playback"
 )
@@ -14,26 +15,26 @@ import (
 type App struct {
 	ctx context.Context
 
-	// tokenMu guards access to accessToken and refreshTok, since both
-	// the periodic refresh goroutine and any JS-triggered method call
-	// (PlayPause, GetNowPlaying, etc.) can read/write them concurrently.
 	tokenMu     sync.RWMutex
 	accessToken string
 	refreshTok  string
+
+	// Tracks whether the settings panel is open
+	isExpanded bool
 }
 
 func NewApp() *App {
-	return &App{}
+	return &App{
+		isExpanded: false,
+	}
 }
 
-// getToken safely reads the current access token.
 func (a *App) getToken() string {
 	a.tokenMu.RLock()
 	defer a.tokenMu.RUnlock()
 	return a.accessToken
 }
 
-// setTokens safely writes new tokens after a login or refresh.
 func (a *App) setTokens(access, refresh string) {
 	a.tokenMu.Lock()
 	defer a.tokenMu.Unlock()
@@ -53,11 +54,42 @@ func (a *App) startup(ctx context.Context) {
 
 		a.startTokenRefreshLoop()
 	}()
+
+	// Launch hotkey listener safely in its own OS thread context if needed,
+	// or standard goroutine depending on OS hooks
+	go a.listenForHotkeys()
 }
 
-// startTokenRefreshLoop refreshes the access token every 50 minutes.
-// Spotify tokens expire after ~60 minutes, so refreshing at 50 leaves
-// a safety margin instead of cutting it close to the actual deadline.
+func (a *App) listenForHotkeys() {
+	hkSettings := hotkey.New([]hotkey.Modifier{hotkey.ModCtrl, hotkey.ModAlt}, hotkey.KeyC)
+
+	if err := hkSettings.Register(); err != nil {
+		fmt.Printf("Failed to register Settings hotkey: %v\n", err)
+		return
+	}
+	defer hkSettings.Unregister()
+
+	fmt.Println("Listening for Ctrl+Alt+C...")
+
+	for {
+		select {
+		case <-hkSettings.Keydown():
+			a.isExpanded = !a.isExpanded
+
+			if a.isExpanded {
+				// Expand window to show settings panel (320px wide x 250px tall)
+				runtime.WindowSetSize(a.ctx, 320, 250)
+			} else {
+				// Collapse back down to miniplayer strip
+				runtime.WindowSetSize(a.ctx, 320, 50)
+			}
+
+			// Tell frontend JavaScript to show/hide the settings UI
+			runtime.EventsEmit(a.ctx, "toggle-settings", a.isExpanded)
+		}
+	}
+}
+
 func (a *App) startTokenRefreshLoop() {
 	ticker := time.NewTicker(50 * time.Minute)
 	defer ticker.Stop()
