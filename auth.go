@@ -139,10 +139,12 @@ func loadToken() (TokenResponse, error) {
 	return token, nil
 }
 
-// getAccessToken is the single entry point main() calls: try a saved
-// token first, refresh if possible, otherwise fall back to a full
-// browser login and wait for the result on tokenChan.
-func getAccessToken() string {
+// getAccessTokenFull is the single entry point main() calls: try a
+// saved token first, refresh if possible, otherwise fall back to a
+// full browser login and wait for the result on tokenChan. Returns
+// the full TokenResponse since the caller needs the refresh token
+// too, for the ongoing background refresh loop.
+func getAccessTokenFull() TokenResponse {
 	loadEnv()
 
 	saved, err := loadToken()
@@ -150,12 +152,11 @@ func getAccessToken() string {
 		fmt.Println("Found saved token, refreshing instead of logging in again...")
 		newToken, err := refreshToken(saved.RefreshToken)
 		if err == nil {
-			return newToken.AccessToken
+			return newToken
 		}
 		fmt.Println("Refresh failed, falling back to full login:", err)
 	}
 
 	go startLogin()
-	token := <-tokenChan // blocks here until callbackHandler sends one
-	return token.AccessToken
+	return <-tokenChan // blocks here until callbackHandler sends one
 }
