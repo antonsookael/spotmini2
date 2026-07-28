@@ -71,22 +71,14 @@ func (a *App) listenForHotkeys() {
 
 	fmt.Println("Listening for Ctrl+Alt+C...")
 
-	for {
-		select {
-		case <-hkSettings.Keydown():
-			a.isExpanded = !a.isExpanded
-
-			if a.isExpanded {
-				// Expand window to show settings panel (320px wide x 250px tall)
-				runtime.WindowSetSize(a.ctx, 320, 250)
-			} else {
-				// Collapse back down to miniplayer strip
-				runtime.WindowSetSize(a.ctx, 320, 50)
-			}
-
-			// Tell frontend JavaScript to show/hide the settings UI
-			runtime.EventsEmit(a.ctx, "toggle-settings", a.isExpanded)
+	for range hkSettings.Keydown() {
+		a.isExpanded = !a.isExpanded
+		if a.isExpanded {
+			runtime.WindowSetSize(a.ctx, 320, 250)
+		} else {
+			runtime.WindowSetSize(a.ctx, 320, 50)
 		}
+		runtime.EventsEmit(a.ctx, "toggle-settings", a.isExpanded)
 	}
 }
 
