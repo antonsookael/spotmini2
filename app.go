@@ -61,7 +61,7 @@ func (a *App) startup(ctx context.Context) {
 }
 
 func (a *App) listenForHotkeys() {
-	hkSettings := hotkey.New([]hotkey.Modifier{hotkey.ModCtrl, hotkey.ModAlt}, hotkey.KeyC)
+	hkSettings := hotkey.New(settingsHotkeyMods(), hotkey.KeyC)
 
 	if err := hkSettings.Register(); err != nil {
 		fmt.Printf("Failed to register Settings hotkey: %v\n", err)
