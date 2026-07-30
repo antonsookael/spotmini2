@@ -1,4 +1,4 @@
-package main
+package hotkeys
 
 import (
 	"encoding/json"
@@ -21,9 +21,9 @@ type HotkeyConfig struct {
 	Shuffle   HotkeyBinding `json:"shuffle"`
 }
 
-var hotkeyActions = []string{"settings", "playPause", "next", "previous", "shuffle"}
+var Actions = []string{"settings", "playPause", "next", "previous", "shuffle"}
 
-func defaultHotkeyConfig() HotkeyConfig {
+func defaultConfig() HotkeyConfig {
 	mods := []string{"ctrl", "alt"}
 	return HotkeyConfig{
 		Settings:  HotkeyBinding{Mods: mods, Key: "c"},
@@ -34,29 +34,29 @@ func defaultHotkeyConfig() HotkeyConfig {
 	}
 }
 
-const hotkeyConfigPath = "hotkeys.json"
+const configPath = "hotkeys.json"
 
-func loadHotkeyConfig() HotkeyConfig {
-	data, err := os.ReadFile(hotkeyConfigPath)
+func LoadConfig() HotkeyConfig {
+	data, err := os.ReadFile(configPath)
 	if err != nil {
-		return defaultHotkeyConfig()
+		return defaultConfig()
 	}
 	var cfg HotkeyConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return defaultHotkeyConfig()
+		return defaultConfig()
 	}
 	return cfg
 }
 
-func saveHotkeyConfig(cfg HotkeyConfig) error {
+func SaveConfig(cfg HotkeyConfig) error {
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(hotkeyConfigPath, data, 0644)
+	return os.WriteFile(configPath, data, 0644)
 }
 
-func (c HotkeyConfig) binding(action string) (HotkeyBinding, bool) {
+func (c HotkeyConfig) Binding(action string) (HotkeyBinding, bool) {
 	switch action {
 	case "settings":
 		return c.Settings, true
@@ -72,7 +72,7 @@ func (c HotkeyConfig) binding(action string) (HotkeyBinding, bool) {
 	return HotkeyBinding{}, false
 }
 
-func (c *HotkeyConfig) setBinding(action string, b HotkeyBinding) bool {
+func (c *HotkeyConfig) SetBinding(action string, b HotkeyBinding) bool {
 	switch action {
 	case "settings":
 		c.Settings = b
@@ -105,10 +105,10 @@ var keyLookup = map[string]hotkey.Key{
 	"down":  hotkey.KeyDown,
 }
 
-// bindingToHotkey builds an unregistered hotkey.Hotkey from a binding.
+// BindingToHotkey builds an unregistered hotkey.Hotkey from a binding.
 // At least one modifier is required so a plain letter key (e.g. "c") can
 // never become a global hotkey that hijacks normal typing.
-func bindingToHotkey(b HotkeyBinding) (*hotkey.Hotkey, error) {
+func BindingToHotkey(b HotkeyBinding) (*hotkey.Hotkey, error) {
 	if len(b.Mods) == 0 {
 		return nil, fmt.Errorf("hotkey needs at least one modifier")
 	}

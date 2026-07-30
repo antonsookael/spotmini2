@@ -1,4 +1,4 @@
-package main
+package backend
 
 import (
 	"fmt"
@@ -28,7 +28,7 @@ func callbackHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Access token:", token.AccessToken)
 	fmt.Fprintln(w, "Logged in! You can close this tab and go back to the app.")
 
-	// Hand the token back to main(), which is waiting on the other
-	// end of this channel.
+	// Hand the token back to GetAccessTokenFull, which is waiting on the
+	// other end of this channel.
 	tokenChan <- token
 }

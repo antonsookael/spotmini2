@@ -10,6 +10,8 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"golang.design/x/hotkey"
 
+	"spotmini-gui/backend"
+	"spotmini-gui/hotkeys"
 	"spotmini-gui/playback"
 )
 
@@ -24,7 +26,7 @@ type App struct {
 	openedUpward bool
 
 	hotkeyMu      sync.Mutex
-	hotkeyConfig  HotkeyConfig
+	hotkeyConfig  hotkeys.HotkeyConfig
 	activeHotkeys map[string]*hotkey.Hotkey
 }
 
@@ -59,7 +61,7 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 
 	go func() {
-		token := getAccessTokenFull()
+		token := backend.GetAccessTokenFull()
 		a.setTokens(token.AccessToken, token.RefreshToken)
 		runtime.EventsEmit(a.ctx, "logged-in")
 
@@ -69,9 +71,9 @@ func (a *App) startup(ctx context.Context) {
 	// Hotkeys MUST be registered on the thread startup() runs on.
 	// On macOS this has to be the OS main thread, or the OS never
 	// delivers key events to it even though Register() reports success.
-	a.hotkeyConfig = loadHotkeyConfig()
-	for _, action := range hotkeyActions {
-		binding, _ := a.hotkeyConfig.binding(action)
+	a.hotkeyConfig = hotkeys.LoadConfig()
+	for _, action := range hotkeys.Actions {
+		binding, _ := a.hotkeyConfig.Binding(action)
 		if err := a.applyHotkey(action, binding); err != nil {
 			fmt.Printf("Failed to register %s hotkey: %v\n", action, err)
 		}
@@ -82,8 +84,8 @@ func (a *App) startup(ctx context.Context) {
 // any hotkey previously registered for that action. The old hotkey is only
 // torn down after the new one registers successfully, so a bad binding
 // (e.g. one already taken by the OS) doesn't leave the action dead.
-func (a *App) applyHotkey(action string, binding HotkeyBinding) error {
-	hk, err := bindingToHotkey(binding)
+func (a *App) applyHotkey(action string, binding hotkeys.HotkeyBinding) error {
+	hk, err := hotkeys.BindingToHotkey(binding)
 	if err != nil {
 		return err
 	}
@@ -131,7 +133,7 @@ func (a *App) hotkeyAction(action string) func() {
 }
 
 // GetHotkeyConfig returns the currently active hotkey bindings.
-func (a *App) GetHotkeyConfig() HotkeyConfig {
+func (a *App) GetHotkeyConfig() hotkeys.HotkeyConfig {
 	a.hotkeyMu.Lock()
 	defer a.hotkeyMu.Unlock()
 	return a.hotkeyConfig
@@ -142,23 +144,23 @@ func (a *App) GetHotkeyConfig() HotkeyConfig {
 // if the new one fails to register (e.g. it's already taken by the OS).
 func (a *App) SetHotkeyBinding(action string, mods []string, key string) error {
 	a.hotkeyMu.Lock()
-	if _, ok := a.hotkeyConfig.binding(action); !ok {
+	if _, ok := a.hotkeyConfig.Binding(action); !ok {
 		a.hotkeyMu.Unlock()
 		return fmt.Errorf("unknown hotkey action %q", action)
 	}
 	a.hotkeyMu.Unlock()
 
-	binding := HotkeyBinding{Mods: mods, Key: key}
+	binding := hotkeys.HotkeyBinding{Mods: mods, Key: key}
 	if err := a.applyHotkey(action, binding); err != nil {
 		return err
 	}
 
 	a.hotkeyMu.Lock()
-	a.hotkeyConfig.setBinding(action, binding)
+	a.hotkeyConfig.SetBinding(action, binding)
 	cfg := a.hotkeyConfig
 	a.hotkeyMu.Unlock()
 
-	return saveHotkeyConfig(cfg)
+	return hotkeys.SaveConfig(cfg)
 }
 
 // ToggleSettingsPanel opens/closes the customize panel, resizing (and, if
@@ -218,7 +220,7 @@ func (a *App) startTokenRefreshLoop() {
 			continue
 		}
 
-		newToken, err := refreshToken(refresh)
+		newToken, err := backend.RefreshToken(refresh)
 		if err != nil {
 			fmt.Println("Background token refresh failed:", err)
 			continue

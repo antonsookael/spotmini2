@@ -1,4 +1,4 @@
-package main
+package backend
 
 import (
 	"context"
@@ -19,8 +19,8 @@ const scope = "user-read-playback-state user-modify-playback-state playlist-read
 const tokenFile = "token.json"
 
 // tokenChan is how callbackHandler (running inside the temporary auth
-// server) hands the finished token back to main(), which is waiting
-// on the other end of this channel.
+// server) hands the finished token back to GetAccessTokenFull, which is
+// waiting on the other end of this channel.
 var tokenChan = make(chan TokenResponse)
 
 type TokenResponse struct {
@@ -72,9 +72,9 @@ func startLogin() {
 	server.ListenAndServe() // blocks until server.Shutdown() is called
 }
 
-// refreshToken trades a refresh token for a brand new access token,
+// RefreshToken trades a refresh token for a brand new access token,
 // without needing the browser at all.
-func refreshToken(refresh string) (TokenResponse, error) {
+func RefreshToken(refresh string) (TokenResponse, error) {
 	data := url.Values{}
 	data.Set("grant_type", "refresh_token")
 	data.Set("refresh_token", refresh)
@@ -139,18 +139,18 @@ func loadToken() (TokenResponse, error) {
 	return token, nil
 }
 
-// getAccessTokenFull is the single entry point main() calls: try a
-// saved token first, refresh if possible, otherwise fall back to a
-// full browser login and wait for the result on tokenChan. Returns
-// the full TokenResponse since the caller needs the refresh token
-// too, for the ongoing background refresh loop.
-func getAccessTokenFull() TokenResponse {
+// GetAccessTokenFull is the single entry point the app calls on startup:
+// try a saved token first, refresh if possible, otherwise fall back to a
+// full browser login and wait for the result on tokenChan. Returns the
+// full TokenResponse since the caller needs the refresh token too, for
+// the ongoing background refresh loop.
+func GetAccessTokenFull() TokenResponse {
 	loadEnv()
 
 	saved, err := loadToken()
 	if err == nil && saved.RefreshToken != "" {
 		fmt.Println("Found saved token, refreshing instead of logging in again...")
-		newToken, err := refreshToken(saved.RefreshToken)
+		newToken, err := RefreshToken(saved.RefreshToken)
 		if err == nil {
 			return newToken
 		}

@@ -1,6 +1,6 @@
 //go:build !darwin
 
-package main
+package hotkeys
 
 import "golang.design/x/hotkey"
 
