@@ -33,6 +33,16 @@ type App struct {
 const (
 	collapsedHeight = 50
 	expandedHeight  = 420
+
+	// snapThreshold is how close (in px) the window has to be to a
+	// screen edge, once dragging stops, before it snaps flush against it.
+	snapThreshold    = 24
+	snapPollInterval = 40 * time.Millisecond
+	// snapSettleTicks is how many consecutive still polls are required
+	// before a drag is considered released - a single still poll isn't
+	// enough, since a normal hand briefly pauses mid-drag too, and
+	// snapping then would yank the window away from the cursor.
+	snapSettleTicks = 4
 )
 
 func NewApp() *App {
@@ -78,6 +88,8 @@ func (a *App) startup(ctx context.Context) {
 			fmt.Printf("Failed to register %s hotkey: %v\n", action, err)
 		}
 	}
+
+	go a.watchForEdgeSnap()
 }
 
 // applyHotkey registers binding for action, swapping out and unregistering
@@ -192,19 +204,93 @@ func (a *App) ToggleSettingsPanel() {
 	runtime.EventsEmit(a.ctx, "toggle-settings", a.isExpanded)
 }
 
-// currentScreenHeight returns the logical height of the screen the window
-// currently sits on, or 0 if it can't be determined.
-func (a *App) currentScreenHeight() int {
+// currentScreen returns the screen the window currently sits on (or the
+// first one reported, if none is flagged current), and false if no
+// screen info is available at all.
+func (a *App) currentScreen() (runtime.Screen, bool) {
 	screens, err := runtime.ScreenGetAll(a.ctx)
 	if err != nil || len(screens) == 0 {
-		return 0
+		return runtime.Screen{}, false
 	}
 	for _, s := range screens {
 		if s.IsCurrent {
-			return s.Size.Height
+			return s, true
 		}
 	}
-	return screens[0].Size.Height
+	return screens[0], true
+}
+
+// currentScreenHeight returns the logical height of the screen the window
+// currently sits on, or 0 if it can't be determined.
+func (a *App) currentScreenHeight() int {
+	screen, ok := a.currentScreen()
+	if !ok {
+		return 0
+	}
+	return screen.Size.Height
+}
+
+// watchForEdgeSnap polls the window's position and, once it settles
+// (i.e. a drag just ended) within snapThreshold pixels of a screen
+// edge, snaps it flush against that edge - like window edge-snapping
+// in a regular OS window manager, which this frameless window doesn't
+// get for free.
+func (a *App) watchForEdgeSnap() {
+	ticker := time.NewTicker(snapPollInterval)
+	defer ticker.Stop()
+
+	lastX, lastY := runtime.WindowGetPosition(a.ctx)
+	moving := false
+	stillTicks := 0
+
+	for range ticker.C {
+		x, y := runtime.WindowGetPosition(a.ctx)
+
+		if x == lastX && y == lastY {
+			if moving {
+				stillTicks++
+				if stillTicks >= snapSettleTicks {
+					a.snapToEdges(x, y)
+					moving = false
+					stillTicks = 0
+				}
+			}
+			continue
+		}
+
+		lastX, lastY = x, y
+		moving = true
+		stillTicks = 0
+	}
+}
+
+// snapToEdges moves the window flush against any screen edge it's
+// within snapThreshold pixels of.
+func (a *App) snapToEdges(x, y int) {
+	screen, ok := a.currentScreen()
+	if !ok {
+		return
+	}
+
+	width, height := runtime.WindowGetSize(a.ctx)
+
+	snappedX, snappedY := x, y
+
+	if x <= snapThreshold {
+		snappedX = 0
+	} else if screen.Size.Width-(x+width) <= snapThreshold {
+		snappedX = screen.Size.Width - width
+	}
+
+	if y <= snapThreshold {
+		snappedY = 0
+	} else if screen.Size.Height-(y+height) <= snapThreshold {
+		snappedY = screen.Size.Height - height
+	}
+
+	if snappedX != x || snappedY != y {
+		runtime.WindowSetPosition(a.ctx, snappedX, snappedY)
+	}
 }
 
 func (a *App) startTokenRefreshLoop() {
