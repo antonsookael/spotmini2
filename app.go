@@ -183,7 +183,7 @@ func (a *App) ToggleSettingsPanel() {
 
 		if screenHeight > 0 && y+expandedHeight > screenHeight {
 			a.openedUpward = true
-			runtime.WindowSetPosition(a.ctx, x, y-delta)
+			a.setAbsoluteWindowPosition(x, y-delta)
 		} else {
 			a.openedUpward = false
 		}
@@ -192,11 +192,38 @@ func (a *App) ToggleSettingsPanel() {
 		runtime.WindowSetSize(a.ctx, 320, collapsedHeight)
 		if a.openedUpward {
 			x, y := runtime.WindowGetPosition(a.ctx)
-			runtime.WindowSetPosition(a.ctx, x, y+delta)
+			a.setAbsoluteWindowPosition(x, y+delta)
 			a.openedUpward = false
 		}
 	}
 	runtime.EventsEmit(a.ctx, "toggle-settings", a.isExpanded)
+}
+
+// setAbsoluteWindowPosition moves the window to an absolute
+// virtual-desktop coordinate. On Windows, runtime.WindowSetPosition
+// doesn't actually take one - see workAreaOriginAt - so this
+// compensates for that before calling through; on other platforms
+// it's a passthrough.
+func (a *App) setAbsoluteWindowPosition(x, y int) {
+	curX, curY := runtime.WindowGetPosition(a.ctx)
+	width, height := runtime.WindowGetSize(a.ctx)
+
+	originX, originY, ok := workAreaOriginAt(curX+width/2, curY+height/2)
+	if !ok {
+		runtime.WindowSetPosition(a.ctx, x, y)
+		return
+	}
+	runtime.WindowSetPosition(a.ctx, x-originX, y-originY)
+}
+
+// DragWindowTo moves the window to an absolute virtual-desktop
+// coordinate. The frontend calls this on every mousemove while
+// dragging (see main.js) instead of calling the Wails runtime's
+// WindowSetPosition directly, since only Go can correctly translate an
+// absolute target into whatever coordinate space it actually expects
+// on this platform.
+func (a *App) DragWindowTo(x, y int) {
+	a.setAbsoluteWindowPosition(x, y)
 }
 
 // currentScreen returns the screen the window currently sits on (or the
@@ -239,29 +266,39 @@ func (a *App) SnapWindowToEdges() {
 // snapToEdges moves the window flush against any screen edge it's
 // within snapThreshold pixels of.
 func (a *App) snapToEdges(x, y int) {
-	screen, ok := a.currentScreen()
-	if !ok {
-		return
-	}
-
 	width, height := runtime.WindowGetSize(a.ctx)
+
+	// Prefer the real bounds of whichever monitor the window is
+	// actually on (accounts for monitor position on a multi-monitor
+	// setup). Fall back to Wails' screen size, assuming it starts at
+	// the desktop origin, when there's no native lookup for this OS -
+	// only correct for a single monitor, but no worse than before.
+	left, top, right, bottom, ok := monitorBoundsAt(x+width/2, y+height/2)
+	if !ok {
+		screen, found := a.currentScreen()
+		if !found {
+			return
+		}
+		left, top = 0, 0
+		right, bottom = screen.Size.Width, screen.Size.Height
+	}
 
 	snappedX, snappedY := x, y
 
-	if x <= snapThreshold {
-		snappedX = 0
-	} else if screen.Size.Width-(x+width) <= snapThreshold {
-		snappedX = screen.Size.Width - width
+	if x-left <= snapThreshold {
+		snappedX = left
+	} else if right-(x+width) <= snapThreshold {
+		snappedX = right - width
 	}
 
-	if y <= snapThreshold {
-		snappedY = 0
-	} else if screen.Size.Height-(y+height) <= snapThreshold {
-		snappedY = screen.Size.Height - height
+	if y-top <= snapThreshold {
+		snappedY = top
+	} else if bottom-(y+height) <= snapThreshold {
+		snappedY = bottom - height
 	}
 
 	if snappedX != x || snappedY != y {
-		runtime.WindowSetPosition(a.ctx, snappedX, snappedY)
+		a.setAbsoluteWindowPosition(snappedX, snappedY)
 	}
 }
 

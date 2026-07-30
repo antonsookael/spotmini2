@@ -1,10 +1,11 @@
-import { EventsOn, WindowGetPosition, WindowSetPosition } from '../wailsjs/runtime/runtime'
+import { EventsOn, WindowGetPosition } from '../wailsjs/runtime/runtime'
 import {
   GetNowPlaying,
   GetHotkeyConfig,
   SetHotkeyBinding,
   ToggleSettingsPanel,
   SnapWindowToEdges,
+  DragWindowTo,
 } from '../wailsjs/go/main/App'
 
 const trackInfoEl = document.getElementById('track-info')
@@ -142,7 +143,11 @@ nowPlayingEl.addEventListener('mousedown', async (e) => {
 
 document.addEventListener('mousemove', (e) => {
   if (!dragging) return
-  WindowSetPosition(
+  // Goes through Go (DragWindowTo) rather than calling the Wails
+  // runtime's WindowSetPosition directly - on Windows that runtime call
+  // doesn't take an absolute desktop coordinate the way it looks like
+  // it should, and only Go can correctly compensate for that.
+  DragWindowTo(
     dragStartWinX + (e.screenX - dragStartMouseX),
     dragStartWinY + (e.screenY - dragStartMouseY)
   )
