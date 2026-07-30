@@ -9,6 +9,7 @@ import {
 
 const trackInfoEl = document.getElementById('track-info')
 const timerEl = document.getElementById('timer')
+const statusDotEl = document.getElementById('status-dot')
 
 let currentSeconds = 0
 let totalSeconds = 0
@@ -26,8 +27,13 @@ function render() {
   if (!currentSong) {
     trackInfoEl.textContent = 'Nothing playing'
     timerEl.textContent = ''
+    statusDotEl.classList.add('hidden')
     return
   }
+
+  statusDotEl.classList.remove('hidden')
+  statusDotEl.classList.toggle('playing', isCurrentlyPlaying)
+  statusDotEl.classList.toggle('paused', !isCurrentlyPlaying)
 
   trackInfoEl.textContent = `${currentSong} - ${currentArtist}`
   timerEl.textContent =
@@ -94,6 +100,13 @@ EventsOn('logged-in', () => {
   fetchNowPlaying()
 })
 
+// Emitted by Go right after a play/pause/next/previous/shuffle command -
+// re-syncs immediately instead of waiting for the next periodic poll, so
+// the status dot reflects the change right away.
+EventsOn('playback-changed', () => {
+  setTimeout(fetchNowPlaying, 300)
+})
+
 // Listen for the toggle-settings event emitted from Go when Ctrl+Alt+C is pressed
 EventsOn('toggle-settings', (isExpanded) => {
   const settingsPanel = document.getElementById('settings-panel')
@@ -141,24 +154,69 @@ document.addEventListener('mouseup', () => {
   SnapWindowToEdges()
 })
 
-// --- Customization: accent color ---
+// --- Customization: accent + background color ---
 const accentColorInput = document.getElementById('accent-color-input')
+const bgColorInput = document.getElementById('bg-color-input')
+const bgGradientToggle = document.getElementById('bg-gradient-toggle')
+const bgGradientColorInput = document.getElementById('bg-gradient-color-input')
+const bgGradientRow = document.getElementById('bg-gradient-row')
 const root = document.documentElement
 
 const DEFAULT_ACCENT = '#1db954'
+const DEFAULT_BG = '#121212'
+const DEFAULT_BG_GRADIENT = '#1db954'
 
 function applyAccentColor(hex) {
   root.style.setProperty('--accent-color', hex)
 }
 
+// applyBackground sets --bg to either a plain color or a gradient
+// function - both are valid values for the `background` shorthand, so
+// nothing downstream needs to know which one it got.
+function applyBackground() {
+  if (bgGradientToggle.checked) {
+    root.style.setProperty(
+      '--bg',
+      `linear-gradient(135deg, ${bgColorInput.value}, ${bgGradientColorInput.value})`
+    )
+  } else {
+    root.style.setProperty('--bg', bgColorInput.value)
+  }
+}
+
 const savedAccent = localStorage.getItem('accentColor') || DEFAULT_ACCENT
+const savedBg = localStorage.getItem('bgColor') || DEFAULT_BG
+const savedGradientEnabled = localStorage.getItem('bgGradientEnabled') === 'true'
+const savedGradientColor = localStorage.getItem('bgGradientColor') || DEFAULT_BG_GRADIENT
 
 accentColorInput.value = savedAccent
 applyAccentColor(savedAccent)
 
+bgColorInput.value = savedBg
+bgGradientToggle.checked = savedGradientEnabled
+bgGradientColorInput.value = savedGradientColor
+bgGradientRow.classList.toggle('hidden', !savedGradientEnabled)
+applyBackground()
+
 accentColorInput.addEventListener('input', (e) => {
   applyAccentColor(e.target.value)
   localStorage.setItem('accentColor', e.target.value)
+})
+
+bgColorInput.addEventListener('input', (e) => {
+  localStorage.setItem('bgColor', e.target.value)
+  applyBackground()
+})
+
+bgGradientToggle.addEventListener('change', (e) => {
+  bgGradientRow.classList.toggle('hidden', !e.target.checked)
+  localStorage.setItem('bgGradientEnabled', e.target.checked)
+  applyBackground()
+})
+
+bgGradientColorInput.addEventListener('input', (e) => {
+  localStorage.setItem('bgGradientColor', e.target.value)
+  applyBackground()
 })
 
 // --- Customization: hotkeys ---

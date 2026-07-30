@@ -7,6 +7,7 @@
   </head>
   <body>
       <div id="now-playing">
+          <span id="status-dot" class="hidden"></span>
           <span id="track-info">Loading...</span>
           <span id="timer">0:00 / 0:00</span>
           <button id="settings-toggle-btn" title="Customize">&#9881;</button>
@@ -18,6 +19,21 @@
           <div class="setting-row">
             <label for="accent-color-input">Accent color</label>
             <input type="color" id="accent-color-input" value="#1db954" />
+          </div>
+
+          <div class="setting-row">
+            <label for="bg-color-input">Background color</label>
+            <input type="color" id="bg-color-input" value="#121212" />
+          </div>
+
+          <div class="setting-row">
+            <label for="bg-gradient-toggle">Gradient background</label>
+            <input type="checkbox" id="bg-gradient-toggle" />
+          </div>
+
+          <div class="setting-row hidden" id="bg-gradient-row">
+            <label for="bg-gradient-color-input">Gradient color</label>
+            <input type="color" id="bg-gradient-color-input" value="#1db954" />
           </div>
 
           <h3>Hotkeys</h3>

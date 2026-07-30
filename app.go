@@ -32,7 +32,7 @@ type App struct {
 
 const (
 	collapsedHeight = 50
-	expandedHeight  = 420
+	expandedHeight  = 500
 
 	// snapThreshold is how close (in px) the window has to be to a
 	// screen edge, once the drag is released, before it snaps flush
@@ -323,13 +323,12 @@ func (a *App) ToggleShuffle() {
 // Spotify has dropped the active device (which happens after one sits
 // idle for a while), revives a device and retries the exact same
 // action - so a command that only failed because of the idle timeout
-// still ends up doing what it was asked to do.
+// still ends up doing what it was asked to do. Emits "playback-changed"
+// afterwards so the frontend can resync immediately instead of waiting
+// for its next periodic poll.
 func (a *App) withDeviceRevival(action func(token string) error) {
 	token := a.getToken()
-	if err := action(token); !errors.Is(err, playback.ErrNoActiveDevice) {
-		return
-	}
-	if a.reviveDevice(token) {
+	if err := action(token); errors.Is(err, playback.ErrNoActiveDevice) && a.reviveDevice(token) {
 		// Transferring playback doesn't take effect instantly - retrying
 		// right away tends to hit Spotify before the device is actually
 		// marked active again, so the retry itself fails. A short wait
@@ -337,6 +336,7 @@ func (a *App) withDeviceRevival(action func(token string) error) {
 		time.Sleep(1500 * time.Millisecond)
 		action(token)
 	}
+	runtime.EventsEmit(a.ctx, "playback-changed")
 }
 
 // reviveDevice transfers playback to an available device without

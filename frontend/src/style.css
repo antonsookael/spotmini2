@@ -1,3 +1,11 @@
+@font-face {
+  font-family: "Nunito";
+  src: url("./assets/fonts/nunito-v16-latin-regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -6,13 +14,16 @@
 
 :root {
   --accent-color: #1db954;
+  /* Either a plain color or a linear-gradient(...) - set from JS,
+     valid as-is for the `background` shorthand either way. */
+  --bg: #121212;
 }
 
 html, body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #121212;
+  background: var(--bg);
   font-family: -apple-system, "Segoe UI", sans-serif;
 }
 
@@ -35,7 +46,31 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   user-select: none;
+  font-family: "Nunito", -apple-system, "Segoe UI", sans-serif;
 }
+#status-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  margin-right: 10px;
+  border-radius: 50%;
+  background: var(--accent-color);
+}
+
+#status-dot.paused {
+  background: #757575;
+  animation: none;
+}
+
+#status-dot.playing {
+  animation: status-dot-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes status-dot-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
 #track-info {
   flex: 1;
   min-width: 0;
@@ -79,7 +114,7 @@ body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  background-color: #121212;
+  background: var(--bg);
   color: #ffffff;
   padding: 16px;
   border-top: 1px solid #282828;
@@ -118,6 +153,13 @@ body {
 .setting-row input[type="range"] {
   width: 120px;
   accent-color: var(--accent-color);
+}
+
+.setting-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent-color);
+  cursor: pointer;
 }
 
 #settings-panel .hint {
