@@ -35,14 +35,9 @@ const (
 	expandedHeight  = 420
 
 	// snapThreshold is how close (in px) the window has to be to a
-	// screen edge, once dragging stops, before it snaps flush against it.
-	snapThreshold    = 24
-	snapPollInterval = 40 * time.Millisecond
-	// snapSettleTicks is how many consecutive still polls are required
-	// before a drag is considered released - a single still poll isn't
-	// enough, since a normal hand briefly pauses mid-drag too, and
-	// snapping then would yank the window away from the cursor.
-	snapSettleTicks = 4
+	// screen edge, once the drag is released, before it snaps flush
+	// against it.
+	snapThreshold = 24
 )
 
 func NewApp() *App {
@@ -88,8 +83,6 @@ func (a *App) startup(ctx context.Context) {
 			fmt.Printf("Failed to register %s hotkey: %v\n", action, err)
 		}
 	}
-
-	go a.watchForEdgeSnap()
 }
 
 // applyHotkey registers binding for action, swapping out and unregistering
@@ -230,38 +223,15 @@ func (a *App) currentScreenHeight() int {
 	return screen.Size.Height
 }
 
-// watchForEdgeSnap polls the window's position and, once it settles
-// (i.e. a drag just ended) within snapThreshold pixels of a screen
-// edge, snaps it flush against that edge - like window edge-snapping
-// in a regular OS window manager, which this frameless window doesn't
-// get for free.
-func (a *App) watchForEdgeSnap() {
-	ticker := time.NewTicker(snapPollInterval)
-	defer ticker.Stop()
-
-	lastX, lastY := runtime.WindowGetPosition(a.ctx)
-	moving := false
-	stillTicks := 0
-
-	for range ticker.C {
-		x, y := runtime.WindowGetPosition(a.ctx)
-
-		if x == lastX && y == lastY {
-			if moving {
-				stillTicks++
-				if stillTicks >= snapSettleTicks {
-					a.snapToEdges(x, y)
-					moving = false
-					stillTicks = 0
-				}
-			}
-			continue
-		}
-
-		lastX, lastY = x, y
-		moving = true
-		stillTicks = 0
-	}
+// SnapWindowToEdges snaps the window flush against any nearby screen
+// edge. The frontend drives its own drag (tracking mousedown/mousemove/
+// mouseup itself instead of relying on the OS's native drag, which
+// swallows the mouseup) and calls this the instant the mouse button is
+// released, so the snap only ever fires on an actual release - never
+// mid-drag.
+func (a *App) SnapWindowToEdges() {
+	x, y := runtime.WindowGetPosition(a.ctx)
+	a.snapToEdges(x, y)
 }
 
 // snapToEdges moves the window flush against any screen edge it's

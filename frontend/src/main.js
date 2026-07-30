@@ -1,9 +1,10 @@
-import { EventsOn } from '../wailsjs/runtime/runtime'
+import { EventsOn, WindowGetPosition, WindowSetPosition } from '../wailsjs/runtime/runtime'
 import {
   GetNowPlaying,
   GetHotkeyConfig,
   SetHotkeyBinding,
   ToggleSettingsPanel,
+  SnapWindowToEdges,
 } from '../wailsjs/go/main/App'
 
 const trackInfoEl = document.getElementById('track-info')
@@ -101,6 +102,43 @@ EventsOn('toggle-settings', (isExpanded) => {
   } else {
     settingsPanel.classList.add('hidden')
   }
+})
+
+// --- Dragging (driven from JS instead of Wails' native --wails-draggable) ---
+// The native drag hands the OS a modal move loop that swallows mouseup,
+// so there's no reliable moment to know the drag actually ended - which
+// is what edge-snapping needs. Tracking the drag ourselves means mouseup
+// fires normally and we can snap right on release, never mid-drag.
+const nowPlayingEl = document.getElementById('now-playing')
+let dragging = false
+let dragStartMouseX = 0
+let dragStartMouseY = 0
+let dragStartWinX = 0
+let dragStartWinY = 0
+
+nowPlayingEl.addEventListener('mousedown', async (e) => {
+  if (e.button !== 0 || e.target.closest('#settings-toggle-btn')) return
+
+  dragStartMouseX = e.screenX
+  dragStartMouseY = e.screenY
+  const pos = await WindowGetPosition()
+  dragStartWinX = pos.x
+  dragStartWinY = pos.y
+  dragging = true
+})
+
+document.addEventListener('mousemove', (e) => {
+  if (!dragging) return
+  WindowSetPosition(
+    dragStartWinX + (e.screenX - dragStartMouseX),
+    dragStartWinY + (e.screenY - dragStartMouseY)
+  )
+})
+
+document.addEventListener('mouseup', () => {
+  if (!dragging) return
+  dragging = false
+  SnapWindowToEdges()
 })
 
 // --- Customization: accent color ---

@@ -34,7 +34,7 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  --wails-draggable: drag;
+  user-select: none;
 }
 #track-info {
   flex: 1;
