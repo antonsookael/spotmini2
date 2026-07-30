@@ -6,6 +6,8 @@ import {
   ToggleSettingsPanel,
   SnapWindowToEdges,
   DragWindowTo,
+  BeginDrag,
+  EndDrag,
 } from '../wailsjs/go/main/App'
 
 const trackInfoEl = document.getElementById('track-info')
@@ -142,6 +144,13 @@ EventsOn('toggle-settings', (isExpanded) => {
 // is what edge-snapping needs. Tracking the drag ourselves means mouseup
 // fires normally and we can snap right on release, never mid-drag.
 const nowPlayingEl = document.getElementById('now-playing')
+const edgeSnapToggle = document.getElementById('edge-snap-toggle')
+
+edgeSnapToggle.checked = localStorage.getItem('edgeSnapEnabled') !== 'false'
+edgeSnapToggle.addEventListener('change', (e) => {
+  localStorage.setItem('edgeSnapEnabled', e.target.checked)
+})
+
 let dragging = false
 // True from mousedown until mouseup, regardless of whether the async
 // WindowGetPosition() below has resolved yet - lets mouseup cancel a
@@ -171,6 +180,7 @@ nowPlayingEl.addEventListener('mousedown', async (e) => {
   dragStartWinX = pos.x
   dragStartWinY = pos.y
   dragging = true
+  BeginDrag()
 })
 
 // Mousemove can fire far more often than once per rendered frame, and
@@ -209,7 +219,10 @@ document.addEventListener('mouseup', () => {
   if (!dragging) return
   dragging = false
   pendingDragTarget = null
-  SnapWindowToEdges()
+  EndDrag()
+  if (edgeSnapToggle.checked) {
+    SnapWindowToEdges()
+  }
 })
 
 // --- Customization: accent + background color ---

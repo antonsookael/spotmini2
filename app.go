@@ -28,11 +28,17 @@ type App struct {
 	hotkeyMu      sync.Mutex
 	hotkeyConfig  hotkeys.HotkeyConfig
 	activeHotkeys map[string]*hotkey.Hotkey
+
+	dragMu             sync.Mutex
+	dragActive         bool
+	dragOriginX        int
+	dragOriginY        int
+	dragOriginResolved bool
 }
 
 const (
 	collapsedHeight = 50
-	expandedHeight  = 260
+	expandedHeight  = 290
 
 	// snapThreshold is how close (in px) the window has to be to a
 	// screen edge, once the drag is released, before it snaps flush
@@ -216,6 +222,35 @@ func (a *App) setAbsoluteWindowPosition(x, y int) {
 	runtime.WindowSetPosition(a.ctx, x-originX, y-originY)
 }
 
+// BeginDrag captures the coordinate-compensation origin (see
+// workAreaOriginAt) once at the start of a drag, so DragWindowTo can
+// reuse it on every subsequent frame instead of re-resolving it (two
+// syscalls, plus a position/size query) on every single mousemove -
+// that per-frame cost was compounding with the OS's own redraw cost
+// for a larger window (e.g. with the settings panel open) into
+// noticeably laggy dragging.
+func (a *App) BeginDrag() {
+	x, y := runtime.WindowGetPosition(a.ctx)
+	width, height := runtime.WindowGetSize(a.ctx)
+	originX, originY, ok := workAreaOriginAt(x+width/2, y+height/2)
+
+	a.dragMu.Lock()
+	a.dragActive = true
+	a.dragOriginResolved = ok
+	a.dragOriginX, a.dragOriginY = originX, originY
+	a.dragMu.Unlock()
+}
+
+// EndDrag marks the drag as finished, so a stray DragWindowTo call that
+// arrives after mouseup (the frontend's own rAF throttling makes this
+// unlikely, but not impossible) falls back to resolving its origin
+// fresh rather than reusing a now-stale cached one.
+func (a *App) EndDrag() {
+	a.dragMu.Lock()
+	a.dragActive = false
+	a.dragMu.Unlock()
+}
+
 // DragWindowTo moves the window to an absolute virtual-desktop
 // coordinate. The frontend calls this on every mousemove while
 // dragging (see main.js) instead of calling the Wails runtime's
@@ -223,7 +258,21 @@ func (a *App) setAbsoluteWindowPosition(x, y int) {
 // absolute target into whatever coordinate space it actually expects
 // on this platform.
 func (a *App) DragWindowTo(x, y int) {
-	a.setAbsoluteWindowPosition(x, y)
+	a.dragMu.Lock()
+	active := a.dragActive
+	resolved := a.dragOriginResolved
+	originX, originY := a.dragOriginX, a.dragOriginY
+	a.dragMu.Unlock()
+
+	if !active {
+		a.setAbsoluteWindowPosition(x, y)
+		return
+	}
+	if !resolved {
+		runtime.WindowSetPosition(a.ctx, x, y)
+		return
+	}
+	runtime.WindowSetPosition(a.ctx, x-originX, y-originY)
 }
 
 // currentScreen returns the screen the window currently sits on (or the
