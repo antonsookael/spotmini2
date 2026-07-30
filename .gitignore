@@ -3,5 +3,6 @@ node_modules
 frontend/dist
 .env
 token.json
+hotkeys.json
 
 /frontend/wailsjs

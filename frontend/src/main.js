@@ -1,5 +1,10 @@
 import { EventsOn } from '../wailsjs/runtime/runtime'
-import { GetNowPlaying } from '../wailsjs/go/main/App'
+import {
+  GetNowPlaying,
+  GetHotkeyConfig,
+  SetHotkeyBinding,
+  ToggleSettingsPanel,
+} from '../wailsjs/go/main/App'
 
 const trackInfoEl = document.getElementById('track-info')
 const timerEl = document.getElementById('timer')
@@ -130,4 +135,89 @@ accentColorInput.addEventListener('input', (e) => {
 opacityInput.addEventListener('input', (e) => {
   applyOpacity(e.target.value)
   localStorage.setItem('panelOpacity', e.target.value)
+})
+
+// --- Customization: hotkeys ---
+const settingsToggleBtn = document.getElementById('settings-toggle-btn')
+settingsToggleBtn.addEventListener('click', () => {
+  ToggleSettingsPanel()
+})
+
+const KEY_LABELS = { space: 'Space', left: '←', right: '→', up: '↑', down: '↓' }
+const MOD_LABELS = { ctrl: 'Ctrl', alt: 'Alt', shift: 'Shift', cmd: 'Cmd' }
+
+function formatBinding(binding) {
+  if (!binding) return '...'
+  const parts = binding.mods.map((m) => MOD_LABELS[m] || m)
+  parts.push(KEY_LABELS[binding.key] || binding.key.toUpperCase())
+  return parts.join('+')
+}
+
+// Maps a keydown event to one of the key names the Go side understands.
+// Returns null for keys we don't support binding to.
+function normalizeKeyEvent(e) {
+  const named = { ' ': 'space', ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' }
+  if (named[e.key]) return named[e.key]
+  if (/^[a-zA-Z]$/.test(e.key)) return e.key.toLowerCase()
+  return null
+}
+
+function recordHotkey(button, action) {
+  const previousLabel = button.textContent
+  button.textContent = 'Press keys...'
+  button.disabled = true
+
+  function handler(e) {
+    e.preventDefault()
+    e.stopPropagation()
+
+    if (e.key === 'Escape') {
+      cleanup()
+      button.textContent = previousLabel
+      return
+    }
+
+    // Pure modifier presses don't count as the binding's key - keep waiting.
+    if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return
+
+    const keyName = normalizeKeyEvent(e)
+    if (!keyName) return
+
+    const mods = []
+    if (e.ctrlKey) mods.push('ctrl')
+    if (e.altKey) mods.push('alt')
+    if (e.shiftKey) mods.push('shift')
+    if (e.metaKey) mods.push('cmd')
+
+    // Require at least one modifier so a bare letter can't become a global
+    // hotkey that hijacks normal typing everywhere.
+    if (mods.length === 0) return
+
+    cleanup()
+    SetHotkeyBinding(action, mods, keyName)
+      .then(() => {
+        button.textContent = formatBinding({ mods, key: keyName })
+      })
+      .catch((err) => {
+        button.textContent = previousLabel
+        alert('Could not set hotkey: ' + err)
+      })
+  }
+
+  function cleanup() {
+    document.removeEventListener('keydown', handler, true)
+    button.disabled = false
+  }
+
+  document.addEventListener('keydown', handler, true)
+}
+
+document.querySelectorAll('.hotkey-btn').forEach((button) => {
+  button.addEventListener('click', () => recordHotkey(button, button.dataset.action))
+})
+
+GetHotkeyConfig().then((cfg) => {
+  document.querySelectorAll('.hotkey-btn').forEach((button) => {
+    button.textContent = formatBinding(cfg[button.dataset.action])
+  })
 })

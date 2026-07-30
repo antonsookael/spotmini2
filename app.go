@@ -21,16 +21,21 @@ type App struct {
 
 	isExpanded   bool
 	openedUpward bool
+
+	hotkeyMu      sync.Mutex
+	hotkeyConfig  HotkeyConfig
+	activeHotkeys map[string]*hotkey.Hotkey
 }
 
 const (
 	collapsedHeight = 50
-	expandedHeight  = 250
+	expandedHeight  = 420
 )
 
 func NewApp() *App {
 	return &App{
-		isExpanded: false,
+		isExpanded:    false,
+		activeHotkeys: make(map[string]*hotkey.Hotkey),
 	}
 }
 
@@ -60,72 +65,128 @@ func (a *App) startup(ctx context.Context) {
 		a.startTokenRefreshLoop()
 	}()
 
-	// The hotkey MUST be registered on the thread startup() runs on.
+	// Hotkeys MUST be registered on the thread startup() runs on.
 	// On macOS this has to be the OS main thread, or the OS never
 	// delivers key events to it even though Register() reports success.
-	hkSettings := hotkey.New(settingsHotkeyMods(), hotkey.KeyC)
-	if err := hkSettings.Register(); err != nil {
-		fmt.Printf("Failed to register Settings hotkey: %v\n", err)
-		return
-	}
-	fmt.Println("Listening for the customize hotkey...")
-
-	go a.watchSettingsHotkey(hkSettings)
-
-	a.registerPlaybackHotkey("Play/Pause", hotkey.KeySpace, a.PlayPause)
-	a.registerPlaybackHotkey("Next", hotkey.KeyRight, a.NextTrack)
-	a.registerPlaybackHotkey("Previous", hotkey.KeyLeft, a.PreviousTrack)
-	a.registerPlaybackHotkey("Shuffle", hotkey.KeyS, a.ToggleShuffle)
-}
-
-// registerPlaybackHotkey registers a hotkey using the standard settings
-// modifiers and calls action every time it's pressed. Must be called from
-// the same thread as startup(), same as the settings hotkey.
-func (a *App) registerPlaybackHotkey(name string, key hotkey.Key, action func()) {
-	hk := hotkey.New(settingsHotkeyMods(), key)
-	if err := hk.Register(); err != nil {
-		fmt.Printf("Failed to register %s hotkey: %v\n", name, err)
-		return
-	}
-	fmt.Printf("Listening for the %s hotkey...\n", name)
-
-	go func() {
-		defer hk.Unregister()
-		for range hk.Keydown() {
-			action()
+	a.hotkeyConfig = loadHotkeyConfig()
+	for _, action := range hotkeyActions {
+		binding, _ := a.hotkeyConfig.binding(action)
+		if err := a.applyHotkey(action, binding); err != nil {
+			fmt.Printf("Failed to register %s hotkey: %v\n", action, err)
 		}
-	}()
+	}
 }
 
-func (a *App) watchSettingsHotkey(hkSettings *hotkey.Hotkey) {
-	defer hkSettings.Unregister()
+// applyHotkey registers binding for action, swapping out and unregistering
+// any hotkey previously registered for that action. The old hotkey is only
+// torn down after the new one registers successfully, so a bad binding
+// (e.g. one already taken by the OS) doesn't leave the action dead.
+func (a *App) applyHotkey(action string, binding HotkeyBinding) error {
+	hk, err := bindingToHotkey(binding)
+	if err != nil {
+		return err
+	}
+	if err := hk.Register(); err != nil {
+		return err
+	}
+
+	a.hotkeyMu.Lock()
+	old := a.activeHotkeys[action]
+	a.activeHotkeys[action] = hk
+	a.hotkeyMu.Unlock()
+
+	if old != nil {
+		old.Unregister()
+	}
+
+	fmt.Printf("Listening for the %s hotkey...\n", action)
+	go a.watchHotkey(action, hk)
+	return nil
+}
+
+// watchHotkey runs until hk is unregistered (Unregister closes the channel
+// Keydown reads from, so this loop exits cleanly on its own).
+func (a *App) watchHotkey(action string, hk *hotkey.Hotkey) {
+	fn := a.hotkeyAction(action)
+	for range hk.Keydown() {
+		fn()
+	}
+}
+
+func (a *App) hotkeyAction(action string) func() {
+	switch action {
+	case "settings":
+		return a.ToggleSettingsPanel
+	case "playPause":
+		return a.PlayPause
+	case "next":
+		return a.NextTrack
+	case "previous":
+		return a.PreviousTrack
+	case "shuffle":
+		return a.ToggleShuffle
+	}
+	return func() {}
+}
+
+// GetHotkeyConfig returns the currently active hotkey bindings.
+func (a *App) GetHotkeyConfig() HotkeyConfig {
+	a.hotkeyMu.Lock()
+	defer a.hotkeyMu.Unlock()
+	return a.hotkeyConfig
+}
+
+// SetHotkeyBinding rebinds action to the given modifiers/key, persists it,
+// and applies it immediately. The previous binding for action stays active
+// if the new one fails to register (e.g. it's already taken by the OS).
+func (a *App) SetHotkeyBinding(action string, mods []string, key string) error {
+	a.hotkeyMu.Lock()
+	if _, ok := a.hotkeyConfig.binding(action); !ok {
+		a.hotkeyMu.Unlock()
+		return fmt.Errorf("unknown hotkey action %q", action)
+	}
+	a.hotkeyMu.Unlock()
+
+	binding := HotkeyBinding{Mods: mods, Key: key}
+	if err := a.applyHotkey(action, binding); err != nil {
+		return err
+	}
+
+	a.hotkeyMu.Lock()
+	a.hotkeyConfig.setBinding(action, binding)
+	cfg := a.hotkeyConfig
+	a.hotkeyMu.Unlock()
+
+	return saveHotkeyConfig(cfg)
+}
+
+// ToggleSettingsPanel opens/closes the customize panel, resizing (and, if
+// there isn't room to grow downward, repositioning) the window to fit it.
+func (a *App) ToggleSettingsPanel() {
+	a.isExpanded = !a.isExpanded
 
 	delta := expandedHeight - collapsedHeight
 
-	for range hkSettings.Keydown() {
-		a.isExpanded = !a.isExpanded
+	if a.isExpanded {
+		x, y := runtime.WindowGetPosition(a.ctx)
+		screenHeight := a.currentScreenHeight()
 
-		if a.isExpanded {
-			x, y := runtime.WindowGetPosition(a.ctx)
-			screenHeight := a.currentScreenHeight()
-
-			if screenHeight > 0 && y+expandedHeight > screenHeight {
-				a.openedUpward = true
-				runtime.WindowSetPosition(a.ctx, x, y-delta)
-			} else {
-				a.openedUpward = false
-			}
-			runtime.WindowSetSize(a.ctx, 320, expandedHeight)
+		if screenHeight > 0 && y+expandedHeight > screenHeight {
+			a.openedUpward = true
+			runtime.WindowSetPosition(a.ctx, x, y-delta)
 		} else {
-			runtime.WindowSetSize(a.ctx, 320, collapsedHeight)
-			if a.openedUpward {
-				x, y := runtime.WindowGetPosition(a.ctx)
-				runtime.WindowSetPosition(a.ctx, x, y+delta)
-				a.openedUpward = false
-			}
+			a.openedUpward = false
 		}
-		runtime.EventsEmit(a.ctx, "toggle-settings", a.isExpanded)
+		runtime.WindowSetSize(a.ctx, 320, expandedHeight)
+	} else {
+		runtime.WindowSetSize(a.ctx, 320, collapsedHeight)
+		if a.openedUpward {
+			x, y := runtime.WindowGetPosition(a.ctx)
+			runtime.WindowSetPosition(a.ctx, x, y+delta)
+			a.openedUpward = false
+		}
 	}
+	runtime.EventsEmit(a.ctx, "toggle-settings", a.isExpanded)
 }
 
 // currentScreenHeight returns the logical height of the screen the window

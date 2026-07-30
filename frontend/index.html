@@ -9,6 +9,7 @@
       <div id="now-playing">
           <span id="track-info">Loading...</span>
           <span id="timer">0:00 / 0:00</span>
+          <button id="settings-toggle-btn" title="Customize">&#9881;</button>
       </div>
 
       <div id="settings-panel" class="hidden">
@@ -24,7 +25,34 @@
             <input type="range" id="opacity-input" min="0.3" max="1" step="0.05" value="1" />
           </div>
 
-          <p class="hint">Ctrl+Alt+C (Win) / Ctrl+Option+C (Mac) to close</p>
+          <h3>Hotkeys</h3>
+
+          <div class="setting-row">
+            <label>Toggle settings</label>
+            <button class="hotkey-btn" data-action="settings">...</button>
+          </div>
+
+          <div class="setting-row">
+            <label>Play / Pause</label>
+            <button class="hotkey-btn" data-action="playPause">...</button>
+          </div>
+
+          <div class="setting-row">
+            <label>Next track</label>
+            <button class="hotkey-btn" data-action="next">...</button>
+          </div>
+
+          <div class="setting-row">
+            <label>Previous track</label>
+            <button class="hotkey-btn" data-action="previous">...</button>
+          </div>
+
+          <div class="setting-row">
+            <label>Shuffle</label>
+            <button class="hotkey-btn" data-action="shuffle">...</button>
+          </div>
+
+          <p class="hint">Click a hotkey to change it, then press the new combo (Esc to cancel)</p>
       </div>
 
     <script src="./src/main.js" type="module"></script>
