@@ -32,7 +32,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          cp build/bin/spotmini-gui.exe "dist/spotmini-gui-${{ github.ref_name }}-windows.exe"
+          cp build/bin/spotmini-gui.exe "dist/spotmini-${{ github.ref_name }}win.exe"
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
