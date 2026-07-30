@@ -6,7 +6,6 @@
 
 :root {
   --accent-color: #1db954;
-  --panel-opacity: 1;
 }
 
 html, body {
@@ -80,7 +79,7 @@ body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  background-color: rgba(18, 18, 18, var(--panel-opacity));
+  background-color: #121212;
   color: #ffffff;
   padding: 16px;
   border-top: 1px solid #282828;
