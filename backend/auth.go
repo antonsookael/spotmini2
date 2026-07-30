@@ -130,6 +130,15 @@ func exchangeForToken(data url.Values) (TokenResponse, error) {
 		return TokenResponse{}, err
 	}
 
+	// Spotify's error responses are still valid JSON (e.g.
+	// {"error":"invalid_grant",...}), just not shaped like a
+	// TokenResponse - unmarshaling one of those into TokenResponse
+	// silently "succeeds" with every field empty instead of surfacing
+	// the failure, unless the status code is checked here too.
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return TokenResponse{}, fmt.Errorf("spotify returned status %d: %s", resp.StatusCode, string(body))
+	}
+
 	var token TokenResponse
 	if err := json.Unmarshal(body, &token); err != nil {
 		return TokenResponse{}, fmt.Errorf("parsing response: %w (raw: %s)", err, string(body))
@@ -141,11 +150,11 @@ func exchangeForToken(data url.Values) (TokenResponse, error) {
 func saveToken(token TokenResponse) {
 	data, err := json.MarshalIndent(token, "", "  ")
 	if err != nil {
-		fmt.Println("Error saving token:", err)
+		logLine("Error saving token: %v", err)
 		return
 	}
 	if err := os.WriteFile(tokenFile, data, 0644); err != nil {
-		fmt.Println("Error writing token file:", err)
+		logLine("Error writing token file: %v", err)
 	}
 }
 
@@ -170,13 +179,17 @@ func GetAccessTokenFull() TokenResponse {
 	resolveClientID()
 
 	saved, err := loadToken()
-	if err == nil && saved.RefreshToken != "" {
-		fmt.Println("Found saved token, refreshing instead of logging in again...")
+	if err != nil {
+		logLine("No saved token found (%v) - starting full login", err)
+	} else if saved.RefreshToken == "" {
+		logLine("Saved token has no refresh token - starting full login")
+	} else {
+		logLine("Found saved token, refreshing instead of logging in again...")
 		newToken, err := RefreshToken(saved.RefreshToken)
 		if err == nil {
 			return newToken
 		}
-		fmt.Println("Refresh failed, falling back to full login:", err)
+		logLine("Refresh failed, falling back to full login: %v", err)
 	}
 
 	go startLogin()

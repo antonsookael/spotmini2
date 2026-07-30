@@ -1,4 +1,4 @@
-import { EventsOn, WindowGetPosition } from '../wailsjs/runtime/runtime'
+import { EventsOn, WindowGetPosition, Quit } from '../wailsjs/runtime/runtime'
 import {
   GetNowPlaying,
   GetHotkeyConfig,
@@ -163,7 +163,7 @@ let dragStartWinX = 0
 let dragStartWinY = 0
 
 nowPlayingEl.addEventListener('mousedown', async (e) => {
-  if (e.button !== 0 || e.target.closest('#settings-toggle-btn')) return
+  if (e.button !== 0 || e.target.closest('#settings-toggle-btn') || e.target.closest('#close-btn')) return
 
   dragStartMouseX = e.screenX
   dragStartMouseY = e.screenY
@@ -311,6 +311,13 @@ bgGradientColorInput.addEventListener('input', (e) => {
 const settingsToggleBtn = document.getElementById('settings-toggle-btn')
 settingsToggleBtn.addEventListener('click', () => {
   ToggleSettingsPanel()
+})
+
+// This frameless window has no OS title bar, so there's otherwise no
+// way to close it short of Task Manager.
+const closeBtn = document.getElementById('close-btn')
+closeBtn.addEventListener('click', () => {
+  Quit()
 })
 
 const KEY_LABELS = { space: 'Space', left: '←', right: '→', up: '↑', down: '↓' }

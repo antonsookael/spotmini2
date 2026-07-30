@@ -131,6 +131,25 @@ body {
   background: rgba(255, 255, 255, 0.08);
 }
 
+#close-btn {
+  flex-shrink: 0;
+  margin-left: 4px;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #757575;
+  font-size: 12px;
+  cursor: pointer;
+  --wails-draggable: no-drag;
+}
+
+#close-btn:hover {
+  color: #ff5555;
+  background: rgba(255, 255, 255, 0.08);
+}
+
 .hidden {
   display: none !important;
 }
