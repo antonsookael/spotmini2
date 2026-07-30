@@ -19,9 +19,10 @@ type HotkeyConfig struct {
 	Next      HotkeyBinding `json:"next"`
 	Previous  HotkeyBinding `json:"previous"`
 	Shuffle   HotkeyBinding `json:"shuffle"`
+	Loop      HotkeyBinding `json:"loop"`
 }
 
-var Actions = []string{"settings", "playPause", "next", "previous", "shuffle"}
+var Actions = []string{"settings", "playPause", "next", "previous", "shuffle", "loop"}
 
 func defaultConfig() HotkeyConfig {
 	mods := []string{"ctrl", "alt"}
@@ -31,6 +32,7 @@ func defaultConfig() HotkeyConfig {
 		Next:      HotkeyBinding{Mods: mods, Key: "right"},
 		Previous:  HotkeyBinding{Mods: mods, Key: "left"},
 		Shuffle:   HotkeyBinding{Mods: mods, Key: "s"},
+		Loop:      HotkeyBinding{Mods: mods, Key: "l"},
 	}
 }
 
@@ -68,6 +70,8 @@ func (c HotkeyConfig) Binding(action string) (HotkeyBinding, bool) {
 		return c.Previous, true
 	case "shuffle":
 		return c.Shuffle, true
+	case "loop":
+		return c.Loop, true
 	}
 	return HotkeyBinding{}, false
 }
@@ -84,6 +88,8 @@ func (c *HotkeyConfig) SetBinding(action string, b HotkeyBinding) bool {
 		c.Previous = b
 	case "shuffle":
 		c.Shuffle = b
+	case "loop":
+		c.Loop = b
 	default:
 		return false
 	}

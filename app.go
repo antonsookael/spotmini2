@@ -32,7 +32,7 @@ type App struct {
 
 const (
 	collapsedHeight = 50
-	expandedHeight  = 500
+	expandedHeight  = 540
 
 	// snapThreshold is how close (in px) the window has to be to a
 	// screen edge, once the drag is released, before it snaps flush
@@ -133,6 +133,8 @@ func (a *App) hotkeyAction(action string) func() {
 		return a.PreviousTrack
 	case "shuffle":
 		return a.ToggleShuffle
+	case "loop":
+		return a.ToggleLoop
 	}
 	return func() {}
 }
@@ -316,6 +318,20 @@ func (a *App) ToggleShuffle() {
 	}
 	a.withDeviceRevival(func(token string) error {
 		return playback.ToggleShuffle(token, !shuffled)
+	})
+}
+
+// ToggleLoop advances Spotify's repeat mode one step: off -> context
+// (repeat playlist/album) -> track (repeat song) -> off.
+func (a *App) ToggleLoop() {
+	token := a.getToken()
+	current, err := playback.GetRepeatState(token)
+	if err != nil {
+		return
+	}
+	a.withDeviceRevival(func(token string) error {
+		_, err := playback.ToggleLoop(token, current)
+		return err
 	})
 }
 
