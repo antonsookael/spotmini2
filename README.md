@@ -7,6 +7,7 @@ A tiny, frameless, always-on-top Spotify now-playing strip built with Go and Wai
 - Small corner-sized window, no title bar, stays on top of other apps
 - Shows current song, artist, and live progress
 - Play/pause control wip
+- Customizable accent color and panel opacity(opacity is broken rn) with hotkey ctrl+alt+c on windows and ctrl+option+c on macOS
 - Background OAuth login with automatic token refresh
 - Draggable window despite having no title bar
 
