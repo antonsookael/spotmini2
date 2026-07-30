@@ -12,9 +12,20 @@
       </div>
 
       <div id="settings-panel" class="hidden">
-          <h3>Settings & Customization</h3>
-          <p>Hotkeys: Ctrl + Alt + C</p>
+          <h3>Customize</h3>
+
+          <div class="setting-row">
+            <label for="accent-color-input">Accent color</label>
+            <input type="color" id="accent-color-input" value="#1db954" />
           </div>
+
+          <div class="setting-row">
+            <label for="opacity-input">Panel opacity</label>
+            <input type="range" id="opacity-input" min="0.3" max="1" step="0.05" value="1" />
+          </div>
+
+          <p class="hint">Ctrl+Alt+C (Win) / Ctrl+Option+C (Mac) to close</p>
+      </div>
 
     <script src="./src/main.js" type="module"></script>
   </body>

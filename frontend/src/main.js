@@ -97,3 +97,37 @@ EventsOn('toggle-settings', (isExpanded) => {
     settingsPanel.classList.add('hidden')
   }
 })
+
+// --- Customization: accent color + panel opacity ---
+const accentColorInput = document.getElementById('accent-color-input')
+const opacityInput = document.getElementById('opacity-input')
+const root = document.documentElement
+
+const DEFAULT_ACCENT = '#1db954'
+const DEFAULT_OPACITY = '1'
+
+function applyAccentColor(hex) {
+  root.style.setProperty('--accent-color', hex)
+}
+
+function applyOpacity(value) {
+  root.style.setProperty('--panel-opacity', value)
+}
+
+const savedAccent = localStorage.getItem('accentColor') || DEFAULT_ACCENT
+const savedOpacity = localStorage.getItem('panelOpacity') || DEFAULT_OPACITY
+
+accentColorInput.value = savedAccent
+opacityInput.value = savedOpacity
+applyAccentColor(savedAccent)
+applyOpacity(savedOpacity)
+
+accentColorInput.addEventListener('input', (e) => {
+  applyAccentColor(e.target.value)
+  localStorage.setItem('accentColor', e.target.value)
+})
+
+opacityInput.addEventListener('input', (e) => {
+  applyOpacity(e.target.value)
+  localStorage.setItem('panelOpacity', e.target.value)
+})
