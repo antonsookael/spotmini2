@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -235,18 +236,18 @@ func (a *App) PlayPause() {
 		return
 	}
 	if playing {
-		playback.PausePlayback(token)
+		a.withDeviceRevival(playback.PausePlayback)
 	} else {
-		playback.PlayPlayback(token)
+		a.withDeviceRevival(playback.PlayPlayback)
 	}
 }
 
 func (a *App) NextTrack() {
-	playback.NextTrack(a.getToken())
+	a.withDeviceRevival(playback.NextTrack)
 }
 
 func (a *App) PreviousTrack() {
-	playback.PreviousTrack(a.getToken())
+	a.withDeviceRevival(playback.PreviousTrack)
 }
 
 func (a *App) ToggleShuffle() {
@@ -255,7 +256,51 @@ func (a *App) ToggleShuffle() {
 	if err != nil {
 		return
 	}
-	playback.ToggleShuffle(token, !shuffled)
+	a.withDeviceRevival(func(token string) error {
+		return playback.ToggleShuffle(token, !shuffled)
+	})
+}
+
+// withDeviceRevival runs action and, if it fails specifically because
+// Spotify has dropped the active device (which happens after one sits
+// idle for a while), revives a device and retries the exact same
+// action - so a command that only failed because of the idle timeout
+// still ends up doing what it was asked to do.
+func (a *App) withDeviceRevival(action func(token string) error) {
+	token := a.getToken()
+	if err := action(token); !errors.Is(err, playback.ErrNoActiveDevice) {
+		return
+	}
+	if a.reviveDevice(token) {
+		// Transferring playback doesn't take effect instantly - retrying
+		// right away tends to hit Spotify before the device is actually
+		// marked active again, so the retry itself fails. A short wait
+		// gives the transfer time to land first.
+		time.Sleep(1500 * time.Millisecond)
+		action(token)
+	}
+}
+
+// reviveDevice transfers playback to an available device without
+// forcing playback to start - the action that triggered the revival
+// gets retried right after, and that's what decides what actually
+// happens next. Returns true if a device was found to transfer to.
+func (a *App) reviveDevice(token string) bool {
+	devices, err := playback.GetDevices(token)
+	if err != nil || len(devices) == 0 {
+		return false
+	}
+
+	target := devices[0]
+	for _, d := range devices {
+		if !d.IsRestricted {
+			target = d
+			break
+		}
+	}
+
+	playback.TransferPlayback(token, target.ID, false)
+	return true
 }
 
 func (a *App) GetNowPlaying() playback.PlaybackState {
