@@ -11,23 +11,24 @@ A tiny, frameless, always-on-top Spotify now-playing strip built with Go and Wai
 - Background OAuth login with automatic token refresh
 - Draggable window despite having no title bar
 
-## Setup
+## Download
 
-1. Create an app on the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) and grab your Client ID and Client Secret.
-2. Set the app's Redirect URI to:
-   ```
-   http://127.0.0.1:8888/callback
-   ```
-3. Create a `.env` file in the project root:
-   ```
-   clientID=your_client_id_here
-   clientSecret=your_client_secret_here
-   ```
-4. Install dependencies:
+Grab the latest build from [Releases](../../releases) - no setup needed, just run it and log in with Spotify when prompted. Windows may warn that it's from an unrecognized publisher (it isn't code-signed); click "More info" -> "Run anyway".
+
+Login uses OAuth Authorization Code with PKCE, so there's no client secret involved at all - only a public Client ID (baked into the build) and a one-time proof value generated fresh on your machine for each login.
+
+## Developing
+
+1. Install dependencies:
    ```
    go mod tidy
    cd frontend && npm install
    ```
+2. (Optional) to test against your own Spotify app instead of spotmini's shared one, create one on the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard), set its Redirect URI to `http://127.0.0.1:8888/callback`, and add a `.env` file in the project root:
+   ```
+   SPOTIFY_CLIENT_ID=your_client_id_here
+   ```
+   No client secret is needed even here - PKCE doesn't use one.
 
 ## Running
 
@@ -42,6 +43,8 @@ On first run, a browser window opens for Spotify login. After that, a saved toke
 ```
 wails build
 ```
+
+A tagged push (`git tag vX.Y.Z && git push --tags`) also triggers a GitHub Actions workflow that builds and attaches a Windows binary to a new Release automatically.
 
 ## Tech
 

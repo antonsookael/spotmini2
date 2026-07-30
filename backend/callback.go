@@ -15,7 +15,7 @@ func callbackHandler(w http.ResponseWriter, r *http.Request) {
 	data.Set("code", code)
 	data.Set("redirect_uri", redirectURI)
 	data.Set("client_id", clientID)
-	data.Set("client_secret", clientSecret)
+	data.Set("code_verifier", pkceVerifier)
 
 	token, err := exchangeForToken(data)
 	if err != nil {

@@ -12,7 +12,16 @@ import (
 	"github.com/joho/godotenv"
 )
 
-var clientID, clientSecret string
+// defaultClientID is spotmini's own Spotify app Client ID, baked in so
+// downloaded builds work without every user registering their own
+// Spotify app. That's safe with the Authorization Code + PKCE flow
+// used below - unlike the plain Authorization Code flow, PKCE needs
+// no client secret alongside the ID, only a per-login proof value
+// (see pkce.go) that's generated fresh each time and never leaves
+// this machine.
+const defaultClientID = "da2657247b364ce1877a8bdef2a33c90"
+
+var clientID string
 
 const redirectURI = "http://127.0.0.1:8888/callback"
 const scope = "user-read-playback-state user-modify-playback-state playlist-read-private"
@@ -23,6 +32,12 @@ const tokenFile = "token.json"
 // waiting on the other end of this channel.
 var tokenChan = make(chan TokenResponse)
 
+// pkceVerifier holds the current login attempt's PKCE verifier between
+// startLogin generating it and callbackHandler using it to complete
+// the token exchange. Fine as a single package-level value since only
+// one login flow ever runs at a time.
+var pkceVerifier string
+
 type TokenResponse struct {
 	AccessToken  string `json:"access_token"`
 	TokenType    string `json:"token_type"`
@@ -30,15 +45,16 @@ type TokenResponse struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
-func loadEnv() {
-	if err := godotenv.Load(); err != nil {
-		fmt.Println("Warning: no .env file found - relying on real environment variables instead")
-	}
-	clientID = os.Getenv("clientID")
-	clientSecret = os.Getenv("clientSecret")
-	if clientID == "" || clientSecret == "" {
-		fmt.Println("Missing CLIENT_ID or CLIENT_SECRET - check your .env file")
-		os.Exit(1)
+// resolveClientID lets a Client ID be overridden via .env/environment
+// (handy for local development against your own Spotify app) but
+// otherwise just falls back to the one baked into the binary - no
+// setup required for anyone downloading a built release.
+func resolveClientID() {
+	_ = godotenv.Load() // fine if there's no .env file - not required
+
+	clientID = os.Getenv("SPOTIFY_CLIENT_ID")
+	if clientID == "" {
+		clientID = defaultClientID
 	}
 }
 
@@ -47,9 +63,16 @@ func loadEnv() {
 // http.ListenAndServe, an *http.Server can be told to Shutdown once
 // we have what we need, instead of running forever.
 func startLogin() {
+	verifier, err := generateCodeVerifier()
+	if err != nil {
+		fmt.Println("Error generating PKCE verifier:", err)
+		return
+	}
+	pkceVerifier = verifier
+
 	authURL := fmt.Sprintf(
-		"https://accounts.spotify.com/authorize?client_id=%s&response_type=code&redirect_uri=%s&scope=%s",
-		clientID, redirectURI, scope,
+		"https://accounts.spotify.com/authorize?client_id=%s&response_type=code&redirect_uri=%s&scope=%s&code_challenge_method=S256&code_challenge=%s",
+		clientID, redirectURI, scope, codeChallengeFor(verifier),
 	)
 	fmt.Println("Opening login URL in your browser:")
 	fmt.Println(authURL)
@@ -79,7 +102,6 @@ func RefreshToken(refresh string) (TokenResponse, error) {
 	data.Set("grant_type", "refresh_token")
 	data.Set("refresh_token", refresh)
 	data.Set("client_id", clientID)
-	data.Set("client_secret", clientSecret)
 
 	token, err := exchangeForToken(data)
 	if err != nil {
@@ -145,7 +167,7 @@ func loadToken() (TokenResponse, error) {
 // full TokenResponse since the caller needs the refresh token too, for
 // the ongoing background refresh loop.
 func GetAccessTokenFull() TokenResponse {
-	loadEnv()
+	resolveClientID()
 
 	saved, err := loadToken()
 	if err == nil && saved.RefreshToken != "" {
