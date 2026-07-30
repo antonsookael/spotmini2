@@ -17,6 +17,9 @@
   /* Either a plain color or a linear-gradient(...) - set from JS,
      valid as-is for the `background` shorthand either way. */
   --bg: #121212;
+  /* Flips to a dark color when --bg is light enough that light text
+     would be unreadable against it - set from JS alongside --bg. */
+  --fg: #e0e0e0;
 }
 
 html, body {
@@ -39,7 +42,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  color: #e0e0e0;
+  color: var(--fg);
   font-size: 16px;
   padding: 0 12px;
   white-space: nowrap;
@@ -138,7 +141,7 @@ body {
   min-height: 0;
   overflow-y: auto;
   background: var(--bg);
-  color: #ffffff;
+  color: var(--fg);
   padding: 16px;
   border-top: 1px solid #282828;
   font-family: -apple-system, "Segoe UI", sans-serif;
@@ -160,7 +163,7 @@ body {
 
 .setting-row label {
   font-size: 12px;
-  color: #e0e0e0;
+  color: var(--fg);
 }
 
 .setting-row input[type="color"] {
@@ -197,7 +200,7 @@ body {
   border: 1px solid #282828;
   border-radius: 4px;
   background: #1e1e1e;
-  color: #e0e0e0;
+  color: var(--fg);
   font-size: 12px;
   cursor: pointer;
 }

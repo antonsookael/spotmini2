@@ -228,18 +228,35 @@ function applyAccentColor(hex) {
   root.style.setProperty('--accent-color', hex)
 }
 
+// isLightColor estimates perceived brightness (ITU-R BT.601) of a #rrggbb
+// color - good enough to tell whether light text would still be readable
+// against it.
+function isLightColor(hex) {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  const brightness = (r * 299 + g * 587 + b * 114) / 1000
+  return brightness > 180
+}
+
 // applyBackground sets --bg to either a plain color or a gradient
 // function - both are valid values for the `background` shorthand, so
-// nothing downstream needs to know which one it got.
+// nothing downstream needs to know which one it got. It also flips --fg
+// to a dark color whenever the background (or, with a gradient, either
+// end of it) is light enough that the usual light text would wash out.
 function applyBackground() {
-  if (bgGradientToggle.checked) {
-    root.style.setProperty(
-      '--bg',
-      `linear-gradient(135deg, ${bgColorInput.value}, ${bgGradientColorInput.value})`
-    )
+  const gradientOn = bgGradientToggle.checked
+  const bg = bgColorInput.value
+  const gradientColor = bgGradientColorInput.value
+
+  if (gradientOn) {
+    root.style.setProperty('--bg', `linear-gradient(135deg, ${bg}, ${gradientColor})`)
   } else {
-    root.style.setProperty('--bg', bgColorInput.value)
+    root.style.setProperty('--bg', bg)
   }
+
+  const needsDarkText = isLightColor(bg) || (gradientOn && isLightColor(gradientColor))
+  root.style.setProperty('--fg', needsDarkText ? '#121212' : '#e0e0e0')
 }
 
 const savedAccent = localStorage.getItem('accentColor') || DEFAULT_ACCENT
