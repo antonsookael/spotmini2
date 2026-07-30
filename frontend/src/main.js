@@ -11,12 +11,17 @@ import {
 const trackInfoEl = document.getElementById('track-info')
 const timerEl = document.getElementById('timer')
 const statusDotEl = document.getElementById('status-dot')
+const shuffleIconEl = document.getElementById('shuffle-icon')
+const loopIconEl = document.getElementById('loop-icon')
+const loopOneBadgeEl = document.getElementById('loop-one-badge')
 
 let currentSeconds = 0
 let totalSeconds = 0
 let currentSong = ''
 let currentArtist = ''
 let isCurrentlyPlaying = false
+let isShuffled = false
+let repeatState = 'off'
 
 function formatTime(totalSecs) {
   const minutes = Math.floor(totalSecs / 60)
@@ -29,12 +34,23 @@ function render() {
     trackInfoEl.textContent = 'Nothing playing'
     timerEl.textContent = ''
     statusDotEl.classList.add('hidden')
+    shuffleIconEl.classList.add('hidden')
+    loopIconEl.classList.add('hidden')
     return
   }
 
   statusDotEl.classList.remove('hidden')
   statusDotEl.classList.toggle('playing', isCurrentlyPlaying)
   statusDotEl.classList.toggle('paused', !isCurrentlyPlaying)
+
+  shuffleIconEl.classList.remove('hidden')
+  shuffleIconEl.classList.toggle('active', isShuffled)
+
+  loopIconEl.classList.remove('hidden')
+  loopIconEl.classList.toggle('active', repeatState !== 'off')
+  // Repeat-one gets a small "1" badge on the same icon, so it's
+  // distinguishable from repeating the whole playlist/album at a glance.
+  loopOneBadgeEl.classList.toggle('hidden', repeatState !== 'track')
 
   trackInfoEl.textContent = `${currentSong} - ${currentArtist}`
   timerEl.textContent =
@@ -56,6 +72,8 @@ async function fetchNowPlaying() {
     currentSeconds = Math.floor(state.progress_ms / 1000)
     totalSeconds = Math.floor(state.item.duration_ms / 1000)
     isCurrentlyPlaying = state.is_playing
+    isShuffled = state.shuffle_state
+    repeatState = state.repeat_state || 'off'
     render()
   } catch (err) {
     trackInfoEl.textContent = 'Error loading playback'
@@ -125,6 +143,11 @@ EventsOn('toggle-settings', (isExpanded) => {
 // fires normally and we can snap right on release, never mid-drag.
 const nowPlayingEl = document.getElementById('now-playing')
 let dragging = false
+// True from mousedown until mouseup, regardless of whether the async
+// WindowGetPosition() below has resolved yet - lets mouseup cancel a
+// drag that's still starting up instead of only being able to cancel
+// one that's already flagged `dragging`.
+let dragSessionActive = false
 let dragStartMouseX = 0
 let dragStartMouseY = 0
 let dragStartWinX = 0
@@ -135,27 +158,57 @@ nowPlayingEl.addEventListener('mousedown', async (e) => {
 
   dragStartMouseX = e.screenX
   dragStartMouseY = e.screenY
+  dragSessionActive = true
+
   const pos = await WindowGetPosition()
+  // The button may already have been released while we were waiting on
+  // that - without this check, mouseup (which only clears `dragging`)
+  // would have no effect on a drag that hadn't started yet, and this
+  // would then start it anyway, leaving the window stuck following the
+  // cursor with no button held.
+  if (!dragSessionActive) return
+
   dragStartWinX = pos.x
   dragStartWinY = pos.y
   dragging = true
 })
 
+// Mousemove can fire far more often than once per rendered frame, and
+// each drag update is an async round trip to Go (see DragWindowTo
+// below) - forwarding every single event makes them pile up and lag
+// behind the cursor. Coalescing to one update per animation frame
+// keeps it responsive without flooding the Go side.
+let pendingDragTarget = null
+let dragFrameScheduled = false
+
 document.addEventListener('mousemove', (e) => {
   if (!dragging) return
-  // Goes through Go (DragWindowTo) rather than calling the Wails
-  // runtime's WindowSetPosition directly - on Windows that runtime call
-  // doesn't take an absolute desktop coordinate the way it looks like
-  // it should, and only Go can correctly compensate for that.
-  DragWindowTo(
-    dragStartWinX + (e.screenX - dragStartMouseX),
-    dragStartWinY + (e.screenY - dragStartMouseY)
-  )
+
+  pendingDragTarget = {
+    x: dragStartWinX + (e.screenX - dragStartMouseX),
+    y: dragStartWinY + (e.screenY - dragStartMouseY),
+  }
+
+  if (dragFrameScheduled) return
+  dragFrameScheduled = true
+  requestAnimationFrame(() => {
+    dragFrameScheduled = false
+    if (!pendingDragTarget) return
+    // Goes through Go (DragWindowTo) rather than calling the Wails
+    // runtime's WindowSetPosition directly - on Windows that runtime
+    // call doesn't take an absolute desktop coordinate the way it
+    // looks like it should, and only Go can correctly compensate for
+    // that.
+    DragWindowTo(pendingDragTarget.x, pendingDragTarget.y)
+    pendingDragTarget = null
+  })
 })
 
 document.addEventListener('mouseup', () => {
+  dragSessionActive = false
   if (!dragging) return
   dragging = false
+  pendingDragTarget = null
   SnapWindowToEdges()
 })
 
@@ -254,7 +307,13 @@ function recordHotkey(button, action) {
   button.textContent = 'Press keys...'
   button.disabled = true
 
-  function handler(e) {
+  // The combo is captured on keydown but not committed until that same
+  // key is released - so holding modifiers down while deciding, or
+  // pressing several keys before settling on one, doesn't submit early.
+  let candidateKey = null
+  let candidateMods = []
+
+  function keydownHandler(e) {
     e.preventDefault()
     e.stopPropagation()
 
@@ -276,14 +335,26 @@ function recordHotkey(button, action) {
     if (e.shiftKey) mods.push('shift')
     if (e.metaKey) mods.push('cmd')
 
-    // Require at least one modifier so a bare letter can't become a global
-    // hotkey that hijacks normal typing everywhere.
-    if (mods.length === 0) return
+    // No modifier is required - a binding with none registers as a
+    // global hotkey on that key alone, firing system-wide even while
+    // typing that key elsewhere.
+    candidateKey = keyName
+    candidateMods = mods
+    button.textContent = formatBinding({ mods, key: keyName })
+  }
 
+  function keyupHandler(e) {
+    if (!candidateKey || normalizeKeyEvent(e) !== candidateKey) return
+    e.preventDefault()
+    e.stopPropagation()
+
+    const mods = candidateMods
+    const key = candidateKey
     cleanup()
-    SetHotkeyBinding(action, mods, keyName)
+
+    SetHotkeyBinding(action, mods, key)
       .then(() => {
-        button.textContent = formatBinding({ mods, key: keyName })
+        button.textContent = formatBinding({ mods, key })
       })
       .catch((err) => {
         button.textContent = previousLabel
@@ -292,11 +363,13 @@ function recordHotkey(button, action) {
   }
 
   function cleanup() {
-    document.removeEventListener('keydown', handler, true)
+    document.removeEventListener('keydown', keydownHandler, true)
+    document.removeEventListener('keyup', keyupHandler, true)
     button.disabled = false
   }
 
-  document.addEventListener('keydown', handler, true)
+  document.addEventListener('keydown', keydownHandler, true)
+  document.addEventListener('keyup', keyupHandler, true)
 }
 
 document.querySelectorAll('.hotkey-btn').forEach((button) => {

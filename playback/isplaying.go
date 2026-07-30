@@ -8,10 +8,11 @@ import (
 )
 
 type PlaybackState struct {
-	IsPlaying    bool  `json:"is_playing"`
-	ShuffleState bool  `json:"shuffle_state"`
-	ProgressMs   int   `json:"progress_ms"`
-	Item         Track `json:"item"`
+	IsPlaying    bool   `json:"is_playing"`
+	ShuffleState bool   `json:"shuffle_state"`
+	RepeatState  string `json:"repeat_state"`
+	ProgressMs   int    `json:"progress_ms"`
+	Item         Track  `json:"item"`
 }
 
 type Track struct {

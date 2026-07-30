@@ -32,7 +32,7 @@ type App struct {
 
 const (
 	collapsedHeight = 50
-	expandedHeight  = 540
+	expandedHeight  = 260
 
 	// snapThreshold is how close (in px) the window has to be to a
 	// screen edge, once the drag is released, before it snaps flush

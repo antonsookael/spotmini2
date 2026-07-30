@@ -86,6 +86,29 @@ body {
   color: var(--accent-color);
 }
 
+.playback-icon {
+  flex-shrink: 0;
+  margin-left: 8px;
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+  color: #757575;
+}
+
+.playback-icon.active {
+  color: var(--accent-color);
+}
+
+.loop-one-badge {
+  position: absolute;
+  bottom: -3px;
+  right: -4px;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1;
+  color: inherit;
+}
+
 #settings-toggle-btn {
   flex-shrink: 0;
   margin-left: 8px;

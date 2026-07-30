@@ -10,6 +10,24 @@
           <span id="status-dot" class="hidden"></span>
           <span id="track-info">Loading...</span>
           <span id="timer">0:00 / 0:00</span>
+          <span id="shuffle-icon" class="playback-icon hidden" title="Shuffle">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="16 3 21 3 21 8"></polyline>
+              <line x1="4" y1="20" x2="21" y2="3"></line>
+              <polyline points="21 16 21 21 16 21"></polyline>
+              <line x1="15" y1="15" x2="21" y2="21"></line>
+              <line x1="4" y1="4" x2="9" y2="9"></line>
+            </svg>
+          </span>
+          <span id="loop-icon" class="playback-icon hidden" title="Loop">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="17 1 21 5 17 9"></polyline>
+              <path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
+              <polyline points="7 23 3 19 7 15"></polyline>
+              <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
+            </svg>
+            <span id="loop-one-badge" class="loop-one-badge hidden">1</span>
+          </span>
           <button id="settings-toggle-btn" title="Customize">&#9881;</button>
       </div>
 
@@ -36,39 +54,38 @@
             <input type="color" id="bg-gradient-color-input" value="#1db954" />
           </div>
 
-          <h3>Hotkeys</h3>
+          <!--
+            Hotkey rebinding UI is hidden for now (backend in app.go /
+            hotkeys/config.go and the recordHotkey() wiring in main.js
+            are untouched - re-add the rows below to bring it back):
 
-          <div class="setting-row">
-            <label>Toggle settings</label>
-            <button class="hotkey-btn" data-action="settings">...</button>
-          </div>
-
-          <div class="setting-row">
-            <label>Play / Pause</label>
-            <button class="hotkey-btn" data-action="playPause">...</button>
-          </div>
-
-          <div class="setting-row">
-            <label>Next track</label>
-            <button class="hotkey-btn" data-action="next">...</button>
-          </div>
-
-          <div class="setting-row">
-            <label>Previous track</label>
-            <button class="hotkey-btn" data-action="previous">...</button>
-          </div>
-
-          <div class="setting-row">
-            <label>Shuffle</label>
-            <button class="hotkey-btn" data-action="shuffle">...</button>
-          </div>
-
-          <div class="setting-row">
-            <label>Loop</label>
-            <button class="hotkey-btn" data-action="loop">...</button>
-          </div>
-
-          <p class="hint">Click a hotkey to change it, then press the new combo (Esc to cancel)</p>
+            <h3>Hotkeys</h3>
+            <div class="setting-row">
+              <label>Toggle settings</label>
+              <button class="hotkey-btn" data-action="settings">...</button>
+            </div>
+            <div class="setting-row">
+              <label>Play / Pause</label>
+              <button class="hotkey-btn" data-action="playPause">...</button>
+            </div>
+            <div class="setting-row">
+              <label>Next track</label>
+              <button class="hotkey-btn" data-action="next">...</button>
+            </div>
+            <div class="setting-row">
+              <label>Previous track</label>
+              <button class="hotkey-btn" data-action="previous">...</button>
+            </div>
+            <div class="setting-row">
+              <label>Shuffle</label>
+              <button class="hotkey-btn" data-action="shuffle">...</button>
+            </div>
+            <div class="setting-row">
+              <label>Loop</label>
+              <button class="hotkey-btn" data-action="loop">...</button>
+            </div>
+            <p class="hint">Click a hotkey to change it, then press the new combo (Esc to cancel)</p>
+          -->
       </div>
 
     <script src="./src/main.js" type="module"></script>

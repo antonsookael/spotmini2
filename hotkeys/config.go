@@ -112,12 +112,10 @@ var keyLookup = map[string]hotkey.Key{
 }
 
 // BindingToHotkey builds an unregistered hotkey.Hotkey from a binding.
-// At least one modifier is required so a plain letter key (e.g. "c") can
-// never become a global hotkey that hijacks normal typing.
+// A binding with no modifiers is allowed - it registers as a global
+// hotkey on that key alone, which means it fires system-wide, even
+// while typing that key in another app.
 func BindingToHotkey(b HotkeyBinding) (*hotkey.Hotkey, error) {
-	if len(b.Mods) == 0 {
-		return nil, fmt.Errorf("hotkey needs at least one modifier")
-	}
 	key, ok := keyLookup[b.Key]
 	if !ok {
 		return nil, fmt.Errorf("unknown key %q", b.Key)
