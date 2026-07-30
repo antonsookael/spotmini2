@@ -21,7 +21,6 @@ func main() {
 		Height:      50,
 		MinWidth:    320,
 		MinHeight:   50,
-		MaxWidth:    320,
 		Frameless:   true,
 		AlwaysOnTop: true,
 		AssetServer: &assetserver.Options{

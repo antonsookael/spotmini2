@@ -4,5 +4,6 @@ frontend/dist
 .env
 token.json
 hotkeys.json
+spotmini.log
 
 /frontend/wailsjs

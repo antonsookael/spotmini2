@@ -1,4 +1,4 @@
-import { EventsOn, WindowGetPosition, Quit } from '../wailsjs/runtime/runtime'
+import { EventsOn, WindowGetPosition, WindowGetSize, WindowSetSize, Quit } from '../wailsjs/runtime/runtime'
 import {
   GetNowPlaying,
   GetHotkeyConfig,
@@ -24,6 +24,61 @@ let currentArtist = ''
 let isCurrentlyPlaying = false
 let isShuffled = false
 let repeatState = 'off'
+
+// --- Customization: auto-fit window width ---
+// Off by default - the window stays at its usual 320px and long
+// titles get ellipsized, same as always. Turned on, it widens (up to
+// MAX_WIDTH) to fit the current song name and artist, then shrinks
+// back down to MIN_WIDTH once they're short again.
+const MIN_WIDTH = 320
+const MAX_WIDTH = 640
+
+const autoFitToggle = document.getElementById('auto-fit-toggle')
+autoFitToggle.checked = localStorage.getItem('autoFitWidth') === 'true'
+autoFitToggle.addEventListener('change', (e) => {
+  localStorage.setItem('autoFitWidth', e.target.checked)
+  if (e.target.checked) {
+    updateAutoWidth()
+  } else {
+    resetWidth()
+  }
+})
+
+// measureNeededBarWidth briefly lets #track-info grow past its normal
+// flex/ellipsis constraints to find out how wide the bar would need to
+// be to show the current text in full, then puts those styles back.
+function measureNeededBarWidth() {
+  const bar = document.getElementById('now-playing')
+  const prevFlex = trackInfoEl.style.flex
+  const prevOverflow = trackInfoEl.style.overflow
+
+  trackInfoEl.style.flex = '0 0 auto'
+  trackInfoEl.style.overflow = 'visible'
+
+  const needed = bar.scrollWidth
+
+  trackInfoEl.style.flex = prevFlex
+  trackInfoEl.style.overflow = prevOverflow
+
+  return needed
+}
+
+async function updateAutoWidth() {
+  if (!autoFitToggle.checked) return
+
+  const target = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, measureNeededBarWidth() + 8))
+  const size = await WindowGetSize()
+  if (size.w !== target) {
+    WindowSetSize(target, size.h)
+  }
+}
+
+async function resetWidth() {
+  const size = await WindowGetSize()
+  if (size.w !== MIN_WIDTH) {
+    WindowSetSize(MIN_WIDTH, size.h)
+  }
+}
 
 function formatTime(totalSecs) {
   const minutes = Math.floor(totalSecs / 60)
@@ -67,6 +122,7 @@ async function fetchNowPlaying() {
     if (!state.item || !state.item.name) {
       currentSong = ''
       render()
+      updateAutoWidth()
       return
     }
     currentSong = state.item.name
@@ -77,6 +133,7 @@ async function fetchNowPlaying() {
     isShuffled = state.shuffle_state
     repeatState = state.repeat_state || 'off'
     render()
+    updateAutoWidth()
   } catch (err) {
     trackInfoEl.textContent = 'Error loading playback'
     timerEl.textContent = ''

@@ -38,7 +38,7 @@ type App struct {
 
 const (
 	collapsedHeight = 50
-	expandedHeight  = 290
+	expandedHeight  = 300
 
 	// snapThreshold is how close (in px) the window has to be to a
 	// screen edge, once the drag is released, before it snaps flush
@@ -182,6 +182,11 @@ func (a *App) ToggleSettingsPanel() {
 	a.isExpanded = !a.isExpanded
 
 	delta := expandedHeight - collapsedHeight
+	// Reuse whatever width is currently set, rather than hardcoding
+	// 320 - otherwise this would stomp the width auto-fit sets from
+	// the frontend (see updateAutoWidth in main.js) the moment the
+	// panel was toggled.
+	width, _ := runtime.WindowGetSize(a.ctx)
 
 	if a.isExpanded {
 		x, y := runtime.WindowGetPosition(a.ctx)
@@ -193,9 +198,9 @@ func (a *App) ToggleSettingsPanel() {
 		} else {
 			a.openedUpward = false
 		}
-		runtime.WindowSetSize(a.ctx, 320, expandedHeight)
+		runtime.WindowSetSize(a.ctx, width, expandedHeight)
 	} else {
-		runtime.WindowSetSize(a.ctx, 320, collapsedHeight)
+		runtime.WindowSetSize(a.ctx, width, collapsedHeight)
 		if a.openedUpward {
 			x, y := runtime.WindowGetPosition(a.ctx)
 			a.setAbsoluteWindowPosition(x, y+delta)
