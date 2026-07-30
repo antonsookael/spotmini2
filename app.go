@@ -19,8 +19,14 @@ type App struct {
 	accessToken string
 	refreshTok  string
 
-	isExpanded bool
+	isExpanded   bool
+	openedUpward bool
 }
+
+const (
+	collapsedHeight = 50
+	expandedHeight  = 250
+)
 
 func NewApp() *App {
 	return &App{
@@ -70,15 +76,47 @@ func (a *App) startup(ctx context.Context) {
 func (a *App) watchSettingsHotkey(hkSettings *hotkey.Hotkey) {
 	defer hkSettings.Unregister()
 
+	delta := expandedHeight - collapsedHeight
+
 	for range hkSettings.Keydown() {
 		a.isExpanded = !a.isExpanded
+
 		if a.isExpanded {
-			runtime.WindowSetSize(a.ctx, 320, 250)
+			x, y := runtime.WindowGetPosition(a.ctx)
+			screenHeight := a.currentScreenHeight()
+
+			if screenHeight > 0 && y+expandedHeight > screenHeight {
+				a.openedUpward = true
+				runtime.WindowSetPosition(a.ctx, x, y-delta)
+			} else {
+				a.openedUpward = false
+			}
+			runtime.WindowSetSize(a.ctx, 320, expandedHeight)
 		} else {
-			runtime.WindowSetSize(a.ctx, 320, 50)
+			runtime.WindowSetSize(a.ctx, 320, collapsedHeight)
+			if a.openedUpward {
+				x, y := runtime.WindowGetPosition(a.ctx)
+				runtime.WindowSetPosition(a.ctx, x, y+delta)
+				a.openedUpward = false
+			}
 		}
 		runtime.EventsEmit(a.ctx, "toggle-settings", a.isExpanded)
 	}
+}
+
+// currentScreenHeight returns the logical height of the screen the window
+// currently sits on, or 0 if it can't be determined.
+func (a *App) currentScreenHeight() int {
+	screens, err := runtime.ScreenGetAll(a.ctx)
+	if err != nil || len(screens) == 0 {
+		return 0
+	}
+	for _, s := range screens {
+		if s.IsCurrent {
+			return s.Size.Height
+		}
+	}
+	return screens[0].Size.Height
 }
 
 func (a *App) startTokenRefreshLoop() {
