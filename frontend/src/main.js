@@ -393,8 +393,29 @@ document.querySelectorAll('.hotkey-btn').forEach((button) => {
   button.addEventListener('click', () => recordHotkey(button, button.dataset.action))
 })
 
+// Short reference list of the current bindings, shown even with the
+// rebind buttons hidden - built from the same live config, so it stays
+// correct if hotkeys.json is ever edited by hand or the rebind UI comes
+// back.
+const HOTKEY_ACTIONS = ['settings', 'playPause', 'next', 'previous', 'shuffle', 'loop']
+const HOTKEY_LABELS = {
+  settings: 'Settings',
+  playPause: 'Play/Pause',
+  next: 'Next',
+  previous: 'Prev',
+  shuffle: 'Shuffle',
+  loop: 'Loop',
+}
+
 GetHotkeyConfig().then((cfg) => {
   document.querySelectorAll('.hotkey-btn').forEach((button) => {
     button.textContent = formatBinding(cfg[button.dataset.action])
   })
+
+  const summaryEl = document.getElementById('hotkey-summary')
+  if (summaryEl) {
+    summaryEl.textContent = HOTKEY_ACTIONS.map(
+      (action) => `${HOTKEY_LABELS[action]} ${formatBinding(cfg[action])}`
+    ).join(' · ')
+  }
 })

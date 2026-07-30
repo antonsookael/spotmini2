@@ -142,14 +142,14 @@ body {
   overflow-y: auto;
   background: var(--bg);
   color: var(--fg);
-  padding: 16px;
+  padding: 12px;
   border-top: 1px solid #282828;
   font-family: -apple-system, "Segoe UI", sans-serif;
 }
 
 #settings-panel h3 {
   font-size: 14px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
   color: var(--accent-color);
 }
 
@@ -157,7 +157,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
   gap: 12px;
 }
 
@@ -192,6 +192,14 @@ body {
   font-size: 11px;
   color: #757575;
   margin-top: 4px;
+  line-height: 1.4;
+}
+
+#hotkey-summary {
+  margin-top: 6px;
+  font-size: 9px;
+  line-height: 1.4;
+  color: #757575;
 }
 
 .hotkey-btn {
