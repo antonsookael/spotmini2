@@ -71,6 +71,30 @@ func (a *App) startup(ctx context.Context) {
 	fmt.Println("Listening for the customize hotkey...")
 
 	go a.watchSettingsHotkey(hkSettings)
+
+	a.registerPlaybackHotkey("Play/Pause", hotkey.KeySpace, a.PlayPause)
+	a.registerPlaybackHotkey("Next", hotkey.KeyRight, a.NextTrack)
+	a.registerPlaybackHotkey("Previous", hotkey.KeyLeft, a.PreviousTrack)
+	a.registerPlaybackHotkey("Shuffle", hotkey.KeyS, a.ToggleShuffle)
+}
+
+// registerPlaybackHotkey registers a hotkey using the standard settings
+// modifiers and calls action every time it's pressed. Must be called from
+// the same thread as startup(), same as the settings hotkey.
+func (a *App) registerPlaybackHotkey(name string, key hotkey.Key, action func()) {
+	hk := hotkey.New(settingsHotkeyMods(), key)
+	if err := hk.Register(); err != nil {
+		fmt.Printf("Failed to register %s hotkey: %v\n", name, err)
+		return
+	}
+	fmt.Printf("Listening for the %s hotkey...\n", name)
+
+	go func() {
+		defer hk.Unregister()
+		for range hk.Keydown() {
+			action()
+		}
+	}()
 }
 
 func (a *App) watchSettingsHotkey(hkSettings *hotkey.Hotkey) {
@@ -154,6 +178,23 @@ func (a *App) PlayPause() {
 	} else {
 		playback.PlayPlayback(token)
 	}
+}
+
+func (a *App) NextTrack() {
+	playback.NextTrack(a.getToken())
+}
+
+func (a *App) PreviousTrack() {
+	playback.PreviousTrack(a.getToken())
+}
+
+func (a *App) ToggleShuffle() {
+	token := a.getToken()
+	shuffled, err := playback.IsShuffled(token)
+	if err != nil {
+		return
+	}
+	playback.ToggleShuffle(token, !shuffled)
 }
 
 func (a *App) GetNowPlaying() playback.PlaybackState {
