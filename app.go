@@ -19,7 +19,6 @@ type App struct {
 	accessToken string
 	refreshTok  string
 
-	// Tracks whether the settings panel is open
 	isExpanded bool
 }
 
@@ -55,21 +54,21 @@ func (a *App) startup(ctx context.Context) {
 		a.startTokenRefreshLoop()
 	}()
 
-	// Launch hotkey listener safely in its own OS thread context if needed,
-	// or standard goroutine depending on OS hooks
-	go a.listenForHotkeys()
-}
-
-func (a *App) listenForHotkeys() {
+	// The hotkey MUST be registered on the thread startup() runs on.
+	// On macOS this has to be the OS main thread, or the OS never
+	// delivers key events to it even though Register() reports success.
 	hkSettings := hotkey.New(settingsHotkeyMods(), hotkey.KeyC)
-
 	if err := hkSettings.Register(); err != nil {
 		fmt.Printf("Failed to register Settings hotkey: %v\n", err)
 		return
 	}
-	defer hkSettings.Unregister()
+	fmt.Println("Listening for the customize hotkey...")
 
-	fmt.Println("Listening for Ctrl+Alt+C...")
+	go a.watchSettingsHotkey(hkSettings)
+}
+
+func (a *App) watchSettingsHotkey(hkSettings *hotkey.Hotkey) {
+	defer hkSettings.Unregister()
 
 	for range hkSettings.Keydown() {
 		a.isExpanded = !a.isExpanded
