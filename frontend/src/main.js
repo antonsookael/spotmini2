@@ -176,7 +176,7 @@ setInterval(() => {
     return
   }
 
-  if (secondsSinceSync >= 15) {
+  if (secondsSinceSync >= 10) {
     secondsSinceSync = 0
     fetchNowPlaying()
   }
