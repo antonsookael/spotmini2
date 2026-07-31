@@ -34,6 +34,10 @@ type App struct {
 	dragOriginX        int
 	dragOriginY        int
 	dragOriginResolved bool
+
+	volumeMu     sync.Mutex
+	lastVolume   int
+	lastVolumeAt time.Time
 }
 
 const (
@@ -44,6 +48,10 @@ const (
 	// screen edge, once the drag is released, before it snaps flush
 	// against it.
 	snapThreshold = 24
+
+	// volumeStep is how many percentage points each volume hotkey
+	// press changes the active device's volume by.
+	volumeStep = 10
 )
 
 func NewApp() *App {
@@ -141,6 +149,10 @@ func (a *App) hotkeyAction(action string) func() {
 		return a.ToggleShuffle
 	case "loop":
 		return a.ToggleLoop
+	case "volumeUp":
+		return a.VolumeUp
+	case "volumeDown":
+		return a.VolumeDown
 	}
 	return func() {}
 }
@@ -424,6 +436,67 @@ func (a *App) ToggleLoop() {
 		_, err := playback.ToggleLoop(token, current)
 		return err
 	})
+}
+
+// VolumeUp raises the active device's volume by volumeStep percentage
+// points.
+func (a *App) VolumeUp() {
+	a.adjustVolume(volumeStep)
+}
+
+// VolumeDown lowers the active device's volume by volumeStep
+// percentage points.
+func (a *App) VolumeDown() {
+	a.adjustVolume(-volumeStep)
+}
+
+// volumeCacheWindow is how long adjustVolume trusts the volume it last
+// applied itself instead of re-fetching from Spotify. Rapid successive
+// presses land faster than Spotify's read API reliably reflects a
+// just-written value, so re-fetching "current" on every single press
+// can read a stale pre-change volume and silently compute the same
+// target twice, swallowing one of the presses. A short cache sidesteps
+// that while still resyncing with any volume change made outside this
+// app (Spotify's own UI, another device) after a brief idle period.
+const volumeCacheWindow = 2 * time.Second
+
+// adjustVolume changes the active device's volume by delta percentage
+// points relative to its current value, then emits "volume-changed" so
+// the frontend can show an indicator - same optimistic-update pattern
+// as withDeviceRevival's own "playback-changed" event, correcting
+// itself on the next poll if the underlying request actually failed.
+//
+// volumeMu is held for the whole read-adjust-write, not just around the
+// cache access - volumeUp and volumeDown are separate hotkey actions,
+// each watched by its own goroutine (see watchHotkey), so pressing both
+// in quick succession runs two of these concurrently. Only serializing
+// the cache access would still let both read the same starting point
+// before either's write lands.
+func (a *App) adjustVolume(delta int) {
+	token := a.getToken()
+
+	a.volumeMu.Lock()
+	defer a.volumeMu.Unlock()
+
+	current := a.lastVolume
+	if time.Since(a.lastVolumeAt) >= volumeCacheWindow {
+		var err error
+		current, err = playback.GetVolume(token)
+		if err != nil {
+			return
+		}
+	}
+
+	var applied int
+	a.withDeviceRevival(func(token string) error {
+		var err error
+		applied, err = playback.SetVolume(token, current+delta)
+		return err
+	})
+
+	a.lastVolume = applied
+	a.lastVolumeAt = time.Now()
+	runtime.EventsEmit(a.ctx, "volume-changed", applied)
 }
 
 // withDeviceRevival runs action and, if it fails specifically because

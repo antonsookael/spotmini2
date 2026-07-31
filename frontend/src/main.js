@@ -193,6 +193,22 @@ EventsOn('playback-changed', () => {
   setTimeout(fetchNowPlaying, 300)
 })
 
+// --- Volume indicator (testing - see the matching block in style.css
+// for how to remove this) ---
+const volumeIndicatorEl = document.getElementById('volume-indicator')
+let volumeIndicatorTimeout = null
+
+EventsOn('volume-changed', (percent) => {
+  volumeIndicatorEl.textContent = `Vol ${percent}%`
+  volumeIndicatorEl.classList.remove('hidden')
+  volumeIndicatorEl.classList.add('visible')
+
+  clearTimeout(volumeIndicatorTimeout)
+  volumeIndicatorTimeout = setTimeout(() => {
+    volumeIndicatorEl.classList.remove('visible')
+  }, 1200)
+})
+
 // Listen for the toggle-settings event emitted from Go when Ctrl+Alt+C is pressed
 EventsOn('toggle-settings', (isExpanded) => {
   const settingsPanel = document.getElementById('settings-panel')
@@ -482,7 +498,7 @@ document.querySelectorAll('.hotkey-btn').forEach((button) => {
 // rebind buttons hidden - built from the same live config, so it stays
 // correct if hotkeys.json is ever edited by hand or the rebind UI comes
 // back.
-const HOTKEY_ACTIONS = ['settings', 'playPause', 'next', 'previous', 'shuffle', 'loop']
+const HOTKEY_ACTIONS = ['settings', 'playPause', 'next', 'previous', 'shuffle', 'loop', 'volumeUp', 'volumeDown']
 const HOTKEY_LABELS = {
   settings: 'Settings',
   playPause: 'Play/Pause',
@@ -490,6 +506,8 @@ const HOTKEY_LABELS = {
   previous: 'Prev',
   shuffle: 'Shuffle',
   loop: 'Loop',
+  volumeUp: 'Vol+',
+  volumeDown: 'Vol-',
 }
 
 GetHotkeyConfig().then((cfg) => {

@@ -31,8 +31,34 @@ html, body {
 }
 
 body {
+  position: relative;
   display: flex;
   flex-direction: column;
+}
+
+/* --- Volume indicator (testing - remove this block plus its .hidden/
+   .visible toggling in main.js and the <div> in index.html to pull it
+   back out) --- */
+#volume-indicator {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: var(--fg);
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: "Nunito", -apple-system, "Segoe UI", sans-serif;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  z-index: 10;
+}
+
+#volume-indicator.visible {
+  opacity: 1;
 }
 
 #now-playing {

@@ -16,40 +16,50 @@ type HotkeyBinding struct {
 }
 
 type HotkeyConfig struct {
-	Settings  HotkeyBinding `json:"settings"`
-	PlayPause HotkeyBinding `json:"playPause"`
-	Next      HotkeyBinding `json:"next"`
-	Previous  HotkeyBinding `json:"previous"`
-	Shuffle   HotkeyBinding `json:"shuffle"`
-	Loop      HotkeyBinding `json:"loop"`
+	Settings   HotkeyBinding `json:"settings"`
+	PlayPause  HotkeyBinding `json:"playPause"`
+	Next       HotkeyBinding `json:"next"`
+	Previous   HotkeyBinding `json:"previous"`
+	Shuffle    HotkeyBinding `json:"shuffle"`
+	Loop       HotkeyBinding `json:"loop"`
+	VolumeUp   HotkeyBinding `json:"volumeUp"`
+	VolumeDown HotkeyBinding `json:"volumeDown"`
 }
 
-var Actions = []string{"settings", "playPause", "next", "previous", "shuffle", "loop"}
+var Actions = []string{"settings", "playPause", "next", "previous", "shuffle", "loop", "volumeUp", "volumeDown"}
 
 func defaultConfig() HotkeyConfig {
 	mods := []string{"ctrl", "alt"}
 	return HotkeyConfig{
-		Settings:  HotkeyBinding{Mods: mods, Key: "c"},
-		PlayPause: HotkeyBinding{Mods: mods, Key: "space"},
-		Next:      HotkeyBinding{Mods: mods, Key: "right"},
-		Previous:  HotkeyBinding{Mods: mods, Key: "left"},
-		Shuffle:   HotkeyBinding{Mods: mods, Key: "s"},
-		Loop:      HotkeyBinding{Mods: mods, Key: "l"},
+		Settings:   HotkeyBinding{Mods: mods, Key: "c"},
+		PlayPause:  HotkeyBinding{Mods: mods, Key: "space"},
+		Next:       HotkeyBinding{Mods: mods, Key: "right"},
+		Previous:   HotkeyBinding{Mods: mods, Key: "left"},
+		Shuffle:    HotkeyBinding{Mods: mods, Key: "s"},
+		Loop:       HotkeyBinding{Mods: mods, Key: "l"},
+		VolumeUp:   HotkeyBinding{Mods: mods, Key: "up"},
+		VolumeDown: HotkeyBinding{Mods: mods, Key: "down"},
 	}
 }
 
 const configPath = "hotkeys.json"
 
 func LoadConfig() HotkeyConfig {
+	// Start from the defaults rather than a blank HotkeyConfig{}, so an
+	// older saved file that predates a newly added action (like
+	// volumeUp/volumeDown) leaves that action at its default binding
+	// instead of an empty one - json.Unmarshal only overwrites fields
+	// actually present in the saved data.
+	cfg := defaultConfig()
+
 	path, err := paths.ConfigFile(configPath)
 	if err != nil {
-		return defaultConfig()
+		return cfg
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return defaultConfig()
+		return cfg
 	}
-	var cfg HotkeyConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return defaultConfig()
 	}
@@ -82,6 +92,10 @@ func (c HotkeyConfig) Binding(action string) (HotkeyBinding, bool) {
 		return c.Shuffle, true
 	case "loop":
 		return c.Loop, true
+	case "volumeUp":
+		return c.VolumeUp, true
+	case "volumeDown":
+		return c.VolumeDown, true
 	}
 	return HotkeyBinding{}, false
 }
@@ -100,6 +114,10 @@ func (c *HotkeyConfig) SetBinding(action string, b HotkeyBinding) bool {
 		c.Shuffle = b
 	case "loop":
 		c.Loop = b
+	case "volumeUp":
+		c.VolumeUp = b
+	case "volumeDown":
+		c.VolumeDown = b
 	default:
 		return false
 	}
