@@ -44,19 +44,27 @@ autoFitToggle.addEventListener('change', (e) => {
   }
 })
 
-// measureNeededBarWidth briefly lets #track-info grow past its normal
-// flex/ellipsis constraints to find out how wide the bar would need to
-// be to show the current text in full, then puts those styles back.
+// measureNeededBarWidth briefly lets #now-playing shrink-wrap its
+// content (instead of staying pinned to the window's current 100%
+// width) and #track-info grow past its normal flex/ellipsis
+// constraints, to find out how wide the bar actually needs to be to
+// show the current text in full, then puts those styles back. Without
+// the bar's own width being freed up too, its scrollWidth could only
+// ever report growth (real overflow past the current window width),
+// never shrinkage - it doesn't drop below the width it's pinned to.
 function measureNeededBarWidth() {
   const bar = document.getElementById('now-playing')
+  const prevBarWidth = bar.style.width
   const prevFlex = trackInfoEl.style.flex
   const prevOverflow = trackInfoEl.style.overflow
 
+  bar.style.width = 'max-content'
   trackInfoEl.style.flex = '0 0 auto'
   trackInfoEl.style.overflow = 'visible'
 
   const needed = bar.scrollWidth
 
+  bar.style.width = prevBarWidth
   trackInfoEl.style.flex = prevFlex
   trackInfoEl.style.overflow = prevOverflow
 
