@@ -57,12 +57,20 @@ jobs:
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
       - name: Build
-        run: wails build
+        # wails build defaults to darwin/amd64 regardless of the runner's
+        # actual architecture - without forcing a universal binary, this
+        # produces an Intel-only build that fails with "bad CPU type in
+        # executable" on Apple Silicon Macs without Rosetta.
+        run: wails build -platform darwin/universal
 
       - name: Package binary
         run: |
           mkdir -p dist
-          ditto -c -k --sequesterRsrc build/bin/spotmini-gui.app "dist/spotmini-${{ github.ref_name }}mac.zip"
+          # --keepParent is required so the zip preserves the
+          # spotmini-gui.app wrapper itself, not just its contents -
+          # without it, extracting dumps a bare Contents/ folder instead
+          # of a double-clickable .app bundle.
+          ditto -c -k --sequesterRsrc --keepParent build/bin/spotmini-gui.app "dist/spotmini-${{ github.ref_name }}mac.zip"
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
