@@ -7,3 +7,4 @@ hotkeys.json
 spotmini.log
 
 /frontend/wailsjs
+.DS_Store
