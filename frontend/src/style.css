@@ -36,9 +36,7 @@ body {
   flex-direction: column;
 }
 
-/* --- Volume indicator (testing - remove this block plus its .hidden/
-   .visible toggling in main.js and the <div> in index.html to pull it
-   back out) --- */
+/* --- Volume indicator --- */
 #volume-indicator {
   position: absolute;
   top: 50%;

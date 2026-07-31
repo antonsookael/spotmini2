@@ -199,8 +199,7 @@ EventsOn('playback-changed', () => {
   setTimeout(fetchNowPlaying, 300)
 })
 
-// --- Volume indicator (testing - see the matching block in style.css
-// for how to remove this) ---
+// --- Volume indicator ---
 const volumeIndicatorEl = document.getElementById('volume-indicator')
 let volumeIndicatorTimeout = null
 

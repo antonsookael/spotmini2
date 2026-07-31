@@ -462,9 +462,13 @@ const volumeCacheWindow = 2 * time.Second
 
 // adjustVolume changes the active device's volume by delta percentage
 // points relative to its current value, then emits "volume-changed" so
-// the frontend can show an indicator - same optimistic-update pattern
-// as withDeviceRevival's own "playback-changed" event, correcting
-// itself on the next poll if the underlying request actually failed.
+// the frontend can show an indicator. Only caches/emits when the
+// change actually landed - withDeviceRevival's return value tells us
+// that, rather than assuming success the way the other playback
+// actions get away with (they're idempotent-ish and self-correct via
+// the next poll; volume isn't polled anywhere, so a failed change
+// still "succeeding" here would desync lastVolume from Spotify's real
+// value with nothing to ever notice or fix it).
 //
 // volumeMu is held for the whole read-adjust-write, not just around the
 // cache access - volumeUp and volumeDown are separate hotkey actions,
@@ -488,11 +492,14 @@ func (a *App) adjustVolume(delta int) {
 	}
 
 	var applied int
-	a.withDeviceRevival(func(token string) error {
+	err := a.withDeviceRevival(func(token string) error {
 		var err error
 		applied, err = playback.SetVolume(token, current+delta)
 		return err
 	})
+	if err != nil {
+		return
+	}
 
 	a.lastVolume = applied
 	a.lastVolumeAt = time.Now()
@@ -505,18 +512,23 @@ func (a *App) adjustVolume(delta int) {
 // action - so a command that only failed because of the idle timeout
 // still ends up doing what it was asked to do. Emits "playback-changed"
 // afterwards so the frontend can resync immediately instead of waiting
-// for its next periodic poll.
-func (a *App) withDeviceRevival(action func(token string) error) {
+// for its next periodic poll. Returns the final error from action, for
+// callers (like adjustVolume) that need to know whether it ultimately
+// succeeded - most callers just ignore it, same fire-and-forget as
+// before.
+func (a *App) withDeviceRevival(action func(token string) error) error {
 	token := a.getToken()
-	if err := action(token); errors.Is(err, playback.ErrNoActiveDevice) && a.reviveDevice(token) {
+	err := action(token)
+	if errors.Is(err, playback.ErrNoActiveDevice) && a.reviveDevice(token) {
 		// Transferring playback doesn't take effect instantly - retrying
 		// right away tends to hit Spotify before the device is actually
 		// marked active again, so the retry itself fails. A short wait
 		// gives the transfer time to land first.
 		time.Sleep(1500 * time.Millisecond)
-		action(token)
+		err = action(token)
 	}
 	runtime.EventsEmit(a.ctx, "playback-changed")
+	return err
 }
 
 // reviveDevice transfers playback to an available device without
