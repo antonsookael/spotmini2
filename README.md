@@ -40,6 +40,11 @@ Login uses OAuth Authorization Code with PKCE, so there's no client secret invol
 
 It isn't code-signed, so Windows will warn that it's from an unrecognized publisher. Click "More info" -> "Run anyway".
 
+Windows Defender (or another antivirus) may also flag or block it outright as a false positive - unsigned, low-reputation executables get flagged more aggressively, and Go binaries specifically tend to trigger this more than average. If that happens:
+
+1. In Windows Security -> Virus & threat protection -> Protection history, find the detection and choose **Allow** (or restore it from quarantine) to run it without disabling real-time protection entirely.
+2. Optionally [report it to Microsoft](https://www.microsoft.com/en-us/wdsi/filesubmission) as a false positive so Defender stops flagging it for everyone, not just you - see [CONTRIBUTING.md](CONTRIBUTING.md) for exact steps.
+
 ### macOS
 
 The build is neither code-signed with a paid Apple Developer ID nor notarized, so macOS Gatekeeper blocks it outright ("Apple cannot check it for malicious software") rather than just warning. To run it:
