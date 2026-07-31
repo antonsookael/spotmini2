@@ -6,6 +6,8 @@ import (
 	"os"
 
 	"golang.design/x/hotkey"
+
+	"spotmini-gui/paths"
 )
 
 type HotkeyBinding struct {
@@ -39,7 +41,11 @@ func defaultConfig() HotkeyConfig {
 const configPath = "hotkeys.json"
 
 func LoadConfig() HotkeyConfig {
-	data, err := os.ReadFile(configPath)
+	path, err := paths.ConfigFile(configPath)
+	if err != nil {
+		return defaultConfig()
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return defaultConfig()
 	}
@@ -55,7 +61,11 @@ func SaveConfig(cfg HotkeyConfig) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(configPath, data, 0644)
+	path, err := paths.ConfigFile(configPath)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
 }
 
 func (c HotkeyConfig) Binding(action string) (HotkeyBinding, bool) {

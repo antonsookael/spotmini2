@@ -10,6 +10,8 @@ import (
 	"os"
 
 	"github.com/joho/godotenv"
+
+	"spotmini-gui/paths"
 )
 
 // defaultClientID is spotmini's own Spotify app Client ID, baked in so
@@ -153,13 +155,22 @@ func saveToken(token TokenResponse) {
 		logLine("Error saving token: %v", err)
 		return
 	}
-	if err := os.WriteFile(tokenFile, data, 0644); err != nil {
+	path, err := paths.ConfigFile(tokenFile)
+	if err != nil {
+		logLine("Error resolving token file path: %v", err)
+		return
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
 		logLine("Error writing token file: %v", err)
 	}
 }
 
 func loadToken() (TokenResponse, error) {
-	data, err := os.ReadFile(tokenFile)
+	path, err := paths.ConfigFile(tokenFile)
+	if err != nil {
+		return TokenResponse{}, err
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return TokenResponse{}, err
 	}
