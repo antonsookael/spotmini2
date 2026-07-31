@@ -11,8 +11,15 @@ import (
 // IsPlaying/IsShuffled - reuses the shared PlaybackState struct so
 // there's only one type declaration for this JSON shape across the
 // whole package.
+//
+// additional_types=track,episode is required here specifically (the
+// other callers of this endpoint don't touch `item` so they don't need
+// it) - without it, Spotify silently returns item: null for a podcast
+// episode even though currently_playing_type correctly says "episode",
+// a backwards-compatibility quirk for clients that only ever expected
+// tracks.
 func NowPlaying(accessToken string) (PlaybackState, error) {
-	req, err := http.NewRequest("GET", "https://api.spotify.com/v1/me/player", nil)
+	req, err := http.NewRequest("GET", "https://api.spotify.com/v1/me/player?additional_types=track,episode", nil)
 	if err != nil {
 		return PlaybackState{}, err
 	}

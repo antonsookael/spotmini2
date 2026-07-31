@@ -15,13 +15,25 @@ type PlaybackState struct {
 	Item         Track  `json:"item"`
 }
 
+// Track is Spotify's shape for whatever is currently playing - a music
+// track (Artists populated, Show nil) or a podcast episode (Show
+// populated, Artists nil/empty). Name and DurationMs are present
+// either way.
 type Track struct {
 	Name       string   `json:"name"`
 	DurationMs int      `json:"duration_ms"`
 	Artists    []Artist `json:"artists"`
+	Show       *Show    `json:"show"`
 }
 
 type Artist struct {
+	Name string `json:"name"`
+}
+
+// Show is the podcast a currently-playing episode belongs to - present
+// in place of Artists when Track represents an episode rather than a
+// track.
+type Show struct {
 	Name string `json:"name"`
 }
 

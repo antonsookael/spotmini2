@@ -117,7 +117,7 @@ function render() {
   // distinguishable from repeating the whole playlist/album at a glance.
   loopOneBadgeEl.classList.toggle('hidden', repeatState !== 'track')
 
-  trackInfoEl.textContent = `${currentSong} - ${currentArtist}`
+  trackInfoEl.textContent = currentArtist ? `${currentSong} - ${currentArtist}` : currentSong
   timerEl.textContent =
     `${formatTime(currentSeconds)}/${formatTime(totalSeconds)}`
 }
@@ -134,7 +134,13 @@ async function fetchNowPlaying() {
       return
     }
     currentSong = state.item.name
-    currentArtist = state.item.artists[0].name
+    // A track has artists; a podcast episode has a show instead - pick
+    // whichever is actually present rather than assuming it's a track.
+    currentArtist = state.item.artists && state.item.artists.length > 0
+      ? state.item.artists[0].name
+      : state.item.show
+      ? state.item.show.name
+      : ''
     currentSeconds = Math.floor(state.progress_ms / 1000)
     totalSeconds = Math.floor(state.item.duration_ms / 1000)
     isCurrentlyPlaying = state.is_playing
