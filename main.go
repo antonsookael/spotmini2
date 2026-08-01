@@ -16,7 +16,7 @@ func main() {
 	app := NewApp()
 
 	err := wails.Run(&options.App{
-		Title:       "spotmini-gui",
+		Title:       "spotmini",
 		Width:       320,
 		Height:      50,
 		MinWidth:    320,

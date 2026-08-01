@@ -32,7 +32,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          cp build/bin/spotmini-gui.exe "dist/spotmini-${{ github.ref_name }}win.exe"
+          cp build/bin/spotmini.exe "dist/spotmini-${{ github.ref_name }}win.exe"
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
@@ -67,10 +67,10 @@ jobs:
         run: |
           mkdir -p dist
           # --keepParent is required so the zip preserves the
-          # spotmini-gui.app wrapper itself, not just its contents -
+          # spotmini.app wrapper itself, not just its contents -
           # without it, extracting dumps a bare Contents/ folder instead
           # of a double-clickable .app bundle.
-          ditto -c -k --sequesterRsrc --keepParent build/bin/spotmini-gui.app "dist/spotmini-${{ github.ref_name }}mac.zip"
+          ditto -c -k --sequesterRsrc --keepParent build/bin/spotmini.app "dist/spotmini-${{ github.ref_name }}mac.zip"
 
       - name: Publish release
         uses: softprops/action-gh-release@v2

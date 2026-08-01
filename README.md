@@ -53,19 +53,19 @@ Windows Defender (or another antivirus) may also flag or block it outright as a 
 
 The build is neither code-signed with a paid Apple Developer ID nor notarized, so macOS Gatekeeper blocks it outright ("Apple cannot check it for malicious software") rather than just warning. To run it:
 
-1. Unzip `spotmini-vX.Y.Zmac.zip` - this gives you `spotmini-gui.app`.
+1. Unzip `spotmini-vX.Y.Zmac.zip` - this gives you `spotmini.app`.
 2. Clear the quarantine flag Gatekeeper attached on download:
    ```
-   xattr -cr /path/to/spotmini-gui.app
+   xattr -cr /path/to/spotmini.app
    ```
 3. Open the app normally (double-click, or move it to `/Applications` first).
-4. For the global hotkeys to work, grant it Accessibility access: **System Settings -> Privacy & Security -> Accessibility**, add `spotmini-gui` (via the **+** button if it's not already listed), and enable it. Quit and relaunch the app afterward.
+4. For the global hotkeys to work, grant it Accessibility access: **System Settings -> Privacy & Security -> Accessibility**, add `spotmini` (via the **+** button if it's not already listed), and enable it. Quit and relaunch the app afterward.
 
 Because the build is unsigned, macOS ties both the quarantine flag and the Accessibility grant to that exact binary - you'll need to repeat steps 2 and 4 for every new release you download, since each one is a different build.
 
 ## Where your data is stored
 
-The saved login token, hotkey bindings, and a diagnostic log live in a per-user app-data folder, not next to the executable:
+The saved login token, hotkey bindings, and a diagnostic log live in a per-user app-data folder, not next to the executable. This folder name is deliberately unchanged from the app's old `spotmini-gui` name, so upgrading doesn't lose your saved login:
 
 - macOS: `~/Library/Application Support/spotmini-gui/`
 - Windows: `%AppData%\spotmini-gui\`
