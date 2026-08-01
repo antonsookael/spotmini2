@@ -1,4 +1,4 @@
-import { EventsOn, WindowGetPosition, WindowGetSize, WindowSetSize, Quit } from '../wailsjs/runtime/runtime'
+import { EventsOn, WindowGetPosition, WindowGetSize, WindowSetSize, WindowSetAlwaysOnTop, Quit } from '../wailsjs/runtime/runtime'
 import {
   GetNowPlaying,
   GetHotkeyConfig,
@@ -203,19 +203,31 @@ EventsOn('playback-changed', () => {
   setTimeout(fetchNowPlaying, 300)
 })
 
-// --- Volume indicator ---
-const volumeIndicatorEl = document.getElementById('volume-indicator')
-let volumeIndicatorTimeout = null
+// --- Toast (volume changes, brief status/error messages) ---
+const toastEl = document.getElementById('toast')
+let toastTimeout = null
+
+function showToast(message, duration = 1200) {
+  toastEl.textContent = message
+  toastEl.classList.remove('hidden')
+  toastEl.classList.add('visible')
+
+  clearTimeout(toastTimeout)
+  toastTimeout = setTimeout(() => {
+    toastEl.classList.remove('visible')
+  }, duration)
+}
 
 EventsOn('volume-changed', (percent) => {
-  volumeIndicatorEl.textContent = `Vol ${percent}%`
-  volumeIndicatorEl.classList.remove('hidden')
-  volumeIndicatorEl.classList.add('visible')
+  showToast(`Vol ${percent}%`)
+})
 
-  clearTimeout(volumeIndicatorTimeout)
-  volumeIndicatorTimeout = setTimeout(() => {
-    volumeIndicatorEl.classList.remove('visible')
-  }, 1200)
+// Emitted by Go when a playback command fails specifically because the
+// account isn't Premium - Spotify's playback control endpoints reject
+// every Free-tier request outright, and without this a Free user just
+// sees nothing happen with no indication why.
+EventsOn('premium-required', () => {
+  showToast('Spotify Premium is required for playback control', 3000)
 })
 
 // Listen for the panel-changed event emitted from Go whenever the
@@ -307,6 +319,21 @@ const edgeSnapToggle = document.getElementById('edge-snap-toggle')
 edgeSnapToggle.checked = localStorage.getItem('edgeSnapEnabled') !== 'false'
 edgeSnapToggle.addEventListener('change', (e) => {
   localStorage.setItem('edgeSnapEnabled', e.target.checked)
+})
+
+// --- Customization: always on top ---
+// main.go starts the window with AlwaysOnTop: true - this just lets it
+// be turned off for anyone who only wants the global hotkeys/controls
+// without the window floating over everything else.
+const alwaysOnTopToggle = document.getElementById('always-on-top-toggle')
+
+const savedAlwaysOnTop = localStorage.getItem('alwaysOnTop') !== 'false'
+alwaysOnTopToggle.checked = savedAlwaysOnTop
+WindowSetAlwaysOnTop(savedAlwaysOnTop)
+
+alwaysOnTopToggle.addEventListener('change', (e) => {
+  localStorage.setItem('alwaysOnTop', e.target.checked)
+  WindowSetAlwaysOnTop(e.target.checked)
 })
 
 let dragging = false

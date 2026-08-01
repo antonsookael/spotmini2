@@ -46,7 +46,7 @@ type App struct {
 
 const (
 	collapsedHeight = 50
-	expandedHeight  = 300
+	expandedHeight  = 330
 
 	// snapThreshold is how close (in px) the window has to be to a
 	// screen edge, once the drag is released, before it snaps flush
@@ -604,10 +604,13 @@ func (a *App) adjustVolume(delta int) {
 // action - so a command that only failed because of the idle timeout
 // still ends up doing what it was asked to do. Emits "playback-changed"
 // afterwards so the frontend can resync immediately instead of waiting
-// for its next periodic poll. Returns the final error from action, for
-// callers (like adjustVolume) that need to know whether it ultimately
-// succeeded - most callers just ignore it, same fire-and-forget as
-// before.
+// for its next periodic poll, or "premium-required" instead if the
+// account just isn't allowed to do this at all (a Free account gets
+// this on every control command, not just an idle-device edge case -
+// without surfacing it, the app just looks broken with no explanation).
+// Returns the final error from action, for callers (like adjustVolume)
+// that need to know whether it ultimately succeeded - most callers just
+// ignore it, same fire-and-forget as before.
 func (a *App) withDeviceRevival(action func(token string) error) error {
 	token := a.getToken()
 	err := action(token)
@@ -618,6 +621,9 @@ func (a *App) withDeviceRevival(action func(token string) error) error {
 		// gives the transfer time to land first.
 		time.Sleep(1500 * time.Millisecond)
 		err = action(token)
+	}
+	if errors.Is(err, playback.ErrPremiumRequired) {
+		runtime.EventsEmit(a.ctx, "premium-required")
 	}
 	runtime.EventsEmit(a.ctx, "playback-changed")
 	return err

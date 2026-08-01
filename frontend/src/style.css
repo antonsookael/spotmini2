@@ -36,12 +36,13 @@ body {
   flex-direction: column;
 }
 
-/* --- Volume indicator --- */
-#volume-indicator {
+/* --- Toast (volume changes, brief status/error messages) --- */
+#toast {
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
+  max-width: 90%;
   background: rgba(0, 0, 0, 0.8);
   color: var(--fg);
   padding: 5px 12px;
@@ -49,13 +50,14 @@ body {
   font-size: 13px;
   font-weight: 600;
   font-family: "Nunito", -apple-system, "Segoe UI", sans-serif;
+  text-align: center;
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.15s ease;
   z-index: 10;
 }
 
-#volume-indicator.visible {
+#toast.visible {
   opacity: 1;
 }
 

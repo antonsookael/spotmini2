@@ -33,7 +33,7 @@
           <button id="close-btn" title="Close">&#10005;</button>
       </div>
 
-      <div id="volume-indicator" class="hidden"></div>
+      <div id="toast" class="hidden"></div>
 
       <div id="playlists-panel" class="hidden">
           <input type="text" id="playlist-search-input" placeholder="Search your playlists..." />
@@ -71,6 +71,11 @@
           <div class="setting-row">
             <label for="auto-fit-toggle">Auto-fit window width</label>
             <input type="checkbox" id="auto-fit-toggle" />
+          </div>
+
+          <div class="setting-row">
+            <label for="always-on-top-toggle">Always on top</label>
+            <input type="checkbox" id="always-on-top-toggle" checked />
           </div>
 
           <!--
