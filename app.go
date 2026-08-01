@@ -18,9 +18,10 @@ import (
 type App struct {
 	ctx context.Context
 
-	tokenMu     sync.RWMutex
-	accessToken string
-	refreshTok  string
+	tokenMu        sync.RWMutex
+	accessToken    string
+	refreshTok     string
+	tokenExpiresAt time.Time
 
 	// expandedPanel is "" when collapsed, otherwise "settings" or
 	// "playlists" - only one panel can be expanded at a time, since
@@ -63,19 +64,65 @@ func NewApp() *App {
 	}
 }
 
+// tokenRefreshBuffer is how far ahead of Spotify's actual token expiry
+// getToken proactively refreshes, so a call right at the boundary
+// doesn't slip through with an already-stale token.
+const tokenRefreshBuffer = 60 * time.Second
+
+// getToken returns the current access token, refreshing it first if
+// it's expired (or about to). This check runs on every call rather
+// than trusting startTokenRefreshLoop's background ticker alone -
+// that ticker is driven by Go's monotonic clock, which effectively
+// pauses while the Mac is asleep, so its countdown only counts awake
+// time. Spotify's actual expiry doesn't care about sleep, so after the
+// Mac's been closed for a while the token can genuinely expire in real
+// time well before the ticker's internal countdown catches up.
+// Checking wall-clock expiry here, on every actual use, is correct
+// regardless of how long the machine was asleep.
 func (a *App) getToken() string {
 	a.tokenMu.RLock()
-	defer a.tokenMu.RUnlock()
+	token := a.accessToken
+	refresh := a.refreshTok
+	stale := refresh != "" && time.Now().After(a.tokenExpiresAt.Add(-tokenRefreshBuffer))
+	a.tokenMu.RUnlock()
+
+	if !stale {
+		return token
+	}
+
+	a.tokenMu.Lock()
+	defer a.tokenMu.Unlock()
+
+	// Re-check after acquiring the write lock - another goroutine may
+	// have already refreshed it while this one was waiting.
+	if time.Now().Before(a.tokenExpiresAt.Add(-tokenRefreshBuffer)) {
+		return a.accessToken
+	}
+
+	newToken, err := backend.RefreshToken(a.refreshTok)
+	if err != nil {
+		fmt.Println("On-demand token refresh failed:", err)
+		return a.accessToken
+	}
+
+	a.accessToken = newToken.AccessToken
+	if newToken.RefreshToken != "" {
+		a.refreshTok = newToken.RefreshToken
+	}
+	a.tokenExpiresAt = time.Now().Add(time.Duration(newToken.ExpiresIn) * time.Second)
+	fmt.Println("Access token refreshed on demand")
+
 	return a.accessToken
 }
 
-func (a *App) setTokens(access, refresh string) {
+func (a *App) setTokens(access, refresh string, expiresIn int) {
 	a.tokenMu.Lock()
 	defer a.tokenMu.Unlock()
 	a.accessToken = access
 	if refresh != "" {
 		a.refreshTok = refresh
 	}
+	a.tokenExpiresAt = time.Now().Add(time.Duration(expiresIn) * time.Second)
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -83,7 +130,7 @@ func (a *App) startup(ctx context.Context) {
 
 	go func() {
 		token := backend.GetAccessTokenFull()
-		a.setTokens(token.AccessToken, token.RefreshToken)
+		a.setTokens(token.AccessToken, token.RefreshToken, token.ExpiresIn)
 		runtime.EventsEmit(a.ctx, "logged-in")
 
 		a.startTokenRefreshLoop()
@@ -407,6 +454,12 @@ func (a *App) snapToEdges(x, y int) {
 	}
 }
 
+// startTokenRefreshLoop proactively refreshes the token every 50
+// minutes while the app is actively running, so a call doesn't have to
+// stall on a refresh mid-request in the common case. It's a nice-to-
+// have, not the actual correctness guarantee: getToken's own
+// wall-clock expiry check is what catches the token going stale during
+// a long sleep, since this ticker's countdown can't.
 func (a *App) startTokenRefreshLoop() {
 	ticker := time.NewTicker(50 * time.Minute)
 	defer ticker.Stop()
@@ -426,7 +479,7 @@ func (a *App) startTokenRefreshLoop() {
 			continue
 		}
 
-		a.setTokens(newToken.AccessToken, newToken.RefreshToken)
+		a.setTokens(newToken.AccessToken, newToken.RefreshToken, newToken.ExpiresIn)
 		fmt.Println("Access token refreshed in background")
 	}
 }
