@@ -41,6 +41,16 @@ func GetPlaylists(accessToken string) ([]Playlist, error) {
 		return nil, err
 	}
 
+	// Checked explicitly rather than just trying to unmarshal whatever
+	// came back - an error response (e.g. 403 for a missing OAuth
+	// scope) is still valid JSON, just not shaped like
+	// playlistsResponse, so it would otherwise silently unmarshal into
+	// an empty Items and look identical to "no playlists" instead of
+	// surfacing the real failure.
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("spotify returned status %d: %s", resp.StatusCode, string(body))
+	}
+
 	var parsed playlistsResponse
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("parsing playlists response: %w (raw: %s)", err, string(body))
@@ -93,6 +103,14 @@ func GetLikedSongURIs(accessToken string) ([]string, error) {
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
+	}
+
+	// See the identical check in GetPlaylists - without this, an error
+	// response (e.g. missing OAuth scope) unmarshals into an empty
+	// Items and looks exactly like "no saved tracks" instead of
+	// surfacing the real failure.
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("spotify returned status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var parsed savedTracksResponse

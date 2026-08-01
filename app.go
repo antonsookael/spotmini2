@@ -677,7 +677,11 @@ func (a *App) PlayPlaylist(uri string) {
 func (a *App) PlayLikedSongs() {
 	token := a.getToken()
 	uris, err := playback.GetLikedSongURIs(token)
-	if err != nil || len(uris) == 0 {
+	if err != nil {
+		fmt.Println("Failed to fetch liked songs:", err)
+		return
+	}
+	if len(uris) == 0 {
 		return
 	}
 	a.withDeviceRevival(func(token string) error {
