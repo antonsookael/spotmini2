@@ -239,6 +239,17 @@ func (a *App) togglePanel(panel string) {
 			}
 			runtime.WindowSetSize(a.ctx, width, expandedHeight)
 		}
+		if panel == "playlists" {
+			// A global hotkey can fire while some other app is
+			// focused - AlwaysOnTop only affects z-order, so without
+			// this the window becomes visible but never actually
+			// takes keyboard focus, and the frontend's DOM-level
+			// .focus() on the search input silently does nothing
+			// (keystrokes keep going to whatever app was already
+			// focused). Show() explicitly makes this window key and
+			// activates the app to fix that.
+			runtime.WindowShow(a.ctx)
+		}
 	} else {
 		runtime.WindowSetSize(a.ctx, width, collapsedHeight)
 		if a.openedUpward {
@@ -604,5 +615,19 @@ func (a *App) GetPlaylists() []playback.Playlist {
 func (a *App) PlayPlaylist(uri string) {
 	a.withDeviceRevival(func(token string) error {
 		return playback.PlayPlaylist(token, uri)
+	})
+}
+
+// PlayLikedSongs starts playback of the user's most recently saved
+// tracks - Liked Songs has no playlist URI to hand to PlayPlaylist, so
+// this fetches actual track URIs first and plays those directly.
+func (a *App) PlayLikedSongs() {
+	token := a.getToken()
+	uris, err := playback.GetLikedSongURIs(token)
+	if err != nil || len(uris) == 0 {
+		return
+	}
+	a.withDeviceRevival(func(token string) error {
+		return playback.PlayURIs(token, uris)
 	})
 }

@@ -7,6 +7,7 @@ import {
   TogglePlaylistsPanel,
   GetPlaylists,
   PlayPlaylist,
+  PlayLikedSongs,
   SnapWindowToEdges,
   DragWindowTo,
   BeginDrag,
@@ -254,7 +255,11 @@ function renderPlaylists(playlists) {
     item.className = 'playlist-item'
     item.textContent = playlist.name
     item.addEventListener('click', () => {
-      PlayPlaylist(playlist.uri)
+      if (playlist.liked) {
+        PlayLikedSongs()
+      } else {
+        PlayPlaylist(playlist.uri)
+      }
       TogglePlaylistsPanel()
     })
     playlistListEl.appendChild(item)
@@ -276,7 +281,10 @@ async function openPlaylistsPanel() {
 
   if (!allPlaylists) {
     playlistListEl.innerHTML = '<li class="playlist-empty">Loading...</li>'
-    allPlaylists = (await GetPlaylists()) || []
+    // Liked Songs isn't a real playlist Spotify returns from
+    // GetPlaylists - pinned at the top here so it's always available
+    // and still matches the search filter like everything else.
+    allPlaylists = [{ name: 'Liked Songs', liked: true }, ...((await GetPlaylists()) || [])]
   }
   filterPlaylists()
 }

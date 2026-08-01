@@ -60,3 +60,60 @@ func PlayPlaylist(accessToken, uri string) error {
 	}
 	return doPlayerRequest("PUT", "https://api.spotify.com/v1/me/player/play", accessToken, bytes.NewReader(payload))
 }
+
+type savedTrack struct {
+	Track struct {
+		URI string `json:"uri"`
+	} `json:"track"`
+}
+
+type savedTracksResponse struct {
+	Items []savedTrack `json:"items"`
+}
+
+// GetLikedSongURIs fetches the URIs of the user's most recently saved
+// tracks, up to Spotify's per-page max of 50. Liked Songs has no
+// context_uri the play endpoint accepts the way playlists/albums do,
+// so playing it means passing explicit track URIs instead of a
+// context - this is what supplies those.
+func GetLikedSongURIs(accessToken string) ([]string, error) {
+	req, err := http.NewRequest("GET", "https://api.spotify.com/v1/me/tracks?limit=50", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var parsed savedTracksResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("parsing saved tracks response: %w (raw: %s)", err, string(body))
+	}
+
+	uris := make([]string, len(parsed.Items))
+	for i, item := range parsed.Items {
+		uris[i] = item.Track.URI
+	}
+	return uris, nil
+}
+
+// PlayURIs starts playback of the given track URIs, in order.
+func PlayURIs(accessToken string, uris []string) error {
+	payload, err := json.Marshal(map[string]interface{}{
+		"uris": uris,
+	})
+	if err != nil {
+		return err
+	}
+	return doPlayerRequest("PUT", "https://api.spotify.com/v1/me/player/play", accessToken, bytes.NewReader(payload))
+}
