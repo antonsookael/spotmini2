@@ -30,6 +30,8 @@ All use Ctrl+Alt on Windows and Ctrl+Option on macOS:
 | Volume up       | ↑     |
 | Volume down     | ↓     |
 
+Rebinding these to different keys is currently WIP - the backend supports it, but there's no UI exposed for it yet.
+
 ## Download
 
 Grab the latest build for your OS from [Releases](../../releases) - `spotmini-vX.Y.Zwin.exe` for Windows, `spotmini-vX.Y.Zmac.zip` for macOS.
