@@ -26,7 +26,7 @@ const defaultClientID = "da2657247b364ce1877a8bdef2a33c90"
 var clientID string
 
 const redirectURI = "http://127.0.0.1:8888/callback"
-const scope = "user-read-playback-state user-modify-playback-state playlist-read-private user-library-read"
+const scope = "user-read-playback-state user-modify-playback-state playlist-read-private user-library-read user-library-modify"
 const tokenFile = "token.json"
 
 // tokenChan is how callbackHandler (running inside the temporary auth

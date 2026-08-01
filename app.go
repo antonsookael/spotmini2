@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -695,4 +696,36 @@ func (a *App) PlayLikedSongs() {
 	a.withDeviceRevival(func(token string) error {
 		return playback.PlayURIs(token, uris)
 	})
+}
+
+// SearchTracks searches Spotify's catalog for tracks matching query,
+// for the song-search half of the playlist picker's search box. An
+// empty/whitespace-only query returns no results without making a
+// request - the frontend already skips calling this in that case, but
+// it's cheap insurance against a stray call.
+func (a *App) SearchTracks(query string) []playback.TrackResult {
+	if strings.TrimSpace(query) == "" {
+		return nil
+	}
+	results, err := playback.SearchTracks(a.getToken(), query, 8)
+	if err != nil {
+		fmt.Println("Track search failed:", err)
+		return nil
+	}
+	return results
+}
+
+// PlayTrack starts playback of a single track by URI - used when
+// picking a song from search results.
+func (a *App) PlayTrack(uri string) {
+	a.withDeviceRevival(func(token string) error {
+		return playback.PlayURIs(token, []string{uri})
+	})
+}
+
+// SaveTrackToLiked adds a track to the current user's Liked Songs.
+func (a *App) SaveTrackToLiked(id string) {
+	if err := playback.SaveTrack(a.getToken(), id); err != nil {
+		fmt.Println("Failed to save track:", err)
+	}
 }

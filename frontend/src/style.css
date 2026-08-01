@@ -272,6 +272,77 @@ body {
   padding: 6px 8px;
 }
 
+.results-divider {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #757575;
+  padding: 8px 8px 2px;
+}
+
+.track-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.track-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.track-item-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.track-item-name {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.track-item:hover .track-item-name {
+  color: var(--accent-color);
+}
+
+.track-item-artist {
+  font-size: 10px;
+  color: #757575;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.track-item-save {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  background: none;
+  color: var(--fg);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.track-item-save:hover {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+}
+
+.track-item-save:disabled {
+  color: var(--accent-color);
+  border-color: var(--accent-color);
+  cursor: default;
+  opacity: 0.7;
+}
+
 #settings-panel h3 {
   font-size: 14px;
   margin-bottom: 8px;

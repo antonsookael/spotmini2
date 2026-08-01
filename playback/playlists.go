@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 )
 
 type Playlist struct {
@@ -134,4 +135,28 @@ func PlayURIs(accessToken string, uris []string) error {
 		return err
 	}
 	return doPlayerRequest("PUT", "https://api.spotify.com/v1/me/player/play", accessToken, bytes.NewReader(payload))
+}
+
+// SaveTrack adds the track with the given Spotify ID to the current
+// user's Liked Songs. Not a player command (no device involved), so
+// unlike PlayURIs this doesn't go through doPlayerRequest/withDeviceRevival.
+func SaveTrack(accessToken, id string) error {
+	req, err := http.NewRequest("PUT", "https://api.spotify.com/v1/me/tracks?ids="+url.QueryEscape(id), nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("spotify returned status %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
 }

@@ -8,6 +8,9 @@ import {
   GetPlaylists,
   PlayPlaylist,
   PlayLikedSongs,
+  SearchTracks,
+  PlayTrack,
+  SaveTrackToLiked,
   SnapWindowToEdges,
   DragWindowTo,
   BeginDrag,
@@ -257,46 +260,131 @@ EventsOn('panel-changed', (panel) => {
   }
 })
 
-// --- Playlist picker ---
+// --- Playlist + song picker ---
 const playlistSearchInput = document.getElementById('playlist-search-input')
 const playlistListEl = document.getElementById('playlist-list')
 // Cached after the first load - playlists rarely change mid-session,
 // and refetching on every open would add to the shared Spotify app's
-// rate-limit load for no real benefit.
+// rate-limit load for no real benefit. Track search can't be cached
+// the same way (the catalog is far too large to pre-fetch), so that
+// half is always a live, debounced API call instead.
 let allPlaylists = null
 
-function renderPlaylists(playlists) {
+function makeDivider(label) {
+  const el = document.createElement('li')
+  el.className = 'results-divider'
+  el.textContent = label
+  return el
+}
+
+// renderResults shows playlists and tracks as two visually distinct
+// groups (single-line items vs two-line name+artist items with a save
+// button) - only labeled with a divider when both groups actually have
+// results, so the common case of matching just one type stays clean.
+function renderResults(playlists, tracks) {
   playlistListEl.innerHTML = ''
-  if (playlists.length === 0) {
+
+  if (playlists.length === 0 && tracks.length === 0) {
     const empty = document.createElement('li')
     empty.className = 'playlist-empty'
-    empty.textContent = allPlaylists && allPlaylists.length > 0 ? 'No matches' : 'No playlists found'
+    empty.textContent = playlistSearchInput.value.trim() ? 'No matches' : 'No playlists found'
     playlistListEl.appendChild(empty)
     return
   }
-  for (const playlist of playlists) {
-    const item = document.createElement('li')
-    item.className = 'playlist-item'
-    item.textContent = playlist.name
-    item.addEventListener('click', () => {
-      if (playlist.liked) {
-        PlayLikedSongs()
-      } else {
-        PlayPlaylist(playlist.uri)
-      }
-      TogglePlaylistsPanel()
-    })
-    playlistListEl.appendChild(item)
+
+  const showDividers = playlists.length > 0 && tracks.length > 0
+
+  if (playlists.length > 0) {
+    if (showDividers) playlistListEl.appendChild(makeDivider('Playlists'))
+    for (const playlist of playlists) {
+      const item = document.createElement('li')
+      item.className = 'playlist-item'
+      item.textContent = playlist.name
+      item.addEventListener('click', () => {
+        if (playlist.liked) {
+          PlayLikedSongs()
+        } else {
+          PlayPlaylist(playlist.uri)
+        }
+        TogglePlaylistsPanel()
+      })
+      playlistListEl.appendChild(item)
+    }
+  }
+
+  if (tracks.length > 0) {
+    if (showDividers) playlistListEl.appendChild(makeDivider('Songs'))
+    for (const track of tracks) {
+      const item = document.createElement('li')
+      item.className = 'track-item'
+
+      const info = document.createElement('div')
+      info.className = 'track-item-info'
+      info.addEventListener('click', () => {
+        PlayTrack(track.uri)
+        TogglePlaylistsPanel()
+      })
+
+      const name = document.createElement('div')
+      name.className = 'track-item-name'
+      name.textContent = track.name
+      const artist = document.createElement('div')
+      artist.className = 'track-item-artist'
+      artist.textContent = track.artist
+      info.appendChild(name)
+      info.appendChild(artist)
+
+      const saveBtn = document.createElement('button')
+      saveBtn.className = 'track-item-save'
+      saveBtn.title = 'Add to Liked Songs'
+      saveBtn.textContent = '+'
+      // Its own click target, separate from info's - without stopping
+      // propagation this would also trigger the row's play-on-click.
+      saveBtn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        SaveTrackToLiked(track.id)
+        saveBtn.textContent = '✓'
+        saveBtn.disabled = true
+      })
+
+      item.appendChild(info)
+      item.appendChild(saveBtn)
+      playlistListEl.appendChild(item)
+    }
   }
 }
+
+// searchToken guards against a slow request resolving after a newer
+// one was already fired for a later keystroke - without it, an
+// out-of-order response could overwrite fresher results with stale ones.
+let searchToken = 0
+let trackSearchTimeout = null
 
 function filterPlaylists() {
   if (!allPlaylists) return
   const query = playlistSearchInput.value.trim().toLowerCase()
-  const filtered = query
+  const filteredPlaylists = query
     ? allPlaylists.filter((p) => p.name.toLowerCase().includes(query))
     : allPlaylists
-  renderPlaylists(filtered)
+
+  clearTimeout(trackSearchTimeout)
+  searchToken++
+
+  if (!query) {
+    renderResults(filteredPlaylists, [])
+    return
+  }
+
+  // Playlist matches are local and render immediately; song matches
+  // need a live Spotify search, so they're debounced and filled in
+  // once the request resolves.
+  renderResults(filteredPlaylists, [])
+  const thisSearch = searchToken
+  trackSearchTimeout = setTimeout(async () => {
+    const tracks = (await SearchTracks(query)) || []
+    if (thisSearch !== searchToken) return
+    renderResults(filteredPlaylists, tracks)
+  }, 350)
 }
 
 async function openPlaylistsPanel() {
