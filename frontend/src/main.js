@@ -225,9 +225,21 @@ EventsOn('volume-changed', (percent) => {
 // Emitted by Go when a playback command fails specifically because the
 // account isn't Premium - Spotify's playback control endpoints reject
 // every Free-tier request outright, and without this a Free user just
-// sees nothing happen with no indication why.
+// sees nothing happen with no indication why. Shown in place of the
+// track info (same spot as "Nothing playing"/"Error loading playback")
+// rather than as a toast, then restored by re-fetching once the
+// message has had time to be read.
+let premiumMessageTimeout = null
+
 EventsOn('premium-required', () => {
-  showToast('Spotify Premium is required for playback control', 3000)
+  trackInfoEl.textContent = 'Spotify Premium is required for playback control'
+  timerEl.textContent = ''
+  statusDotEl.classList.add('hidden')
+  shuffleIconEl.classList.add('hidden')
+  loopIconEl.classList.add('hidden')
+
+  clearTimeout(premiumMessageTimeout)
+  premiumMessageTimeout = setTimeout(fetchNowPlaying, 3000)
 })
 
 // Listen for the panel-changed event emitted from Go whenever the

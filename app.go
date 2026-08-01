@@ -604,10 +604,11 @@ func (a *App) adjustVolume(delta int) {
 // action - so a command that only failed because of the idle timeout
 // still ends up doing what it was asked to do. Emits "playback-changed"
 // afterwards so the frontend can resync immediately instead of waiting
-// for its next periodic poll, or "premium-required" instead if the
-// account just isn't allowed to do this at all (a Free account gets
-// this on every control command, not just an idle-device edge case -
-// without surfacing it, the app just looks broken with no explanation).
+// for its next periodic poll - unless the account just isn't allowed to
+// do this at all, in which case it emits "premium-required" instead and
+// skips "playback-changed": nothing actually changed, and the frontend
+// displays that message in place of the track info for a few seconds,
+// which the normal resync would otherwise immediately overwrite.
 // Returns the final error from action, for callers (like adjustVolume)
 // that need to know whether it ultimately succeeded - most callers just
 // ignore it, same fire-and-forget as before.
@@ -624,6 +625,7 @@ func (a *App) withDeviceRevival(action func(token string) error) error {
 	}
 	if errors.Is(err, playback.ErrPremiumRequired) {
 		runtime.EventsEmit(a.ctx, "premium-required")
+		return err
 	}
 	runtime.EventsEmit(a.ctx, "playback-changed")
 	return err
