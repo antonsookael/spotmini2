@@ -28,11 +28,17 @@
             </svg>
             <span id="loop-one-badge" class="loop-one-badge hidden">1</span>
           </span>
+          <button id="playlists-toggle-btn" title="Playlists">&#9835;</button>
           <button id="settings-toggle-btn" title="Customize">&#9881;</button>
           <button id="close-btn" title="Close">&#10005;</button>
       </div>
 
       <div id="volume-indicator" class="hidden"></div>
+
+      <div id="playlists-panel" class="hidden">
+          <input type="text" id="playlist-search-input" placeholder="Search your playlists..." />
+          <ul id="playlist-list"></ul>
+      </div>
 
       <div id="settings-panel" class="hidden">
           <h3>Customize</h3>

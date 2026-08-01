@@ -8,6 +8,7 @@ A tiny, frameless, always-on-top Spotify now-playing strip built with Go and Wai
 - Shows current song, artist, and live progress
 - Play/pause, next/previous, shuffle, and loop (repeat off/playlist/track) controls
 - Volume up/down with a brief on-screen indicator
+- Playlist picker with instant search over your own playlists
 - Global hotkeys for every control above, so it all works even when the window isn't focused
 - Customizable accent color and background (solid or gradient)
 - Auto-fit window width, so long song/artist names aren't clipped
@@ -22,6 +23,7 @@ All use Ctrl+Alt on Windows and Ctrl+Option on macOS:
 | Action          | Key   |
 | --------------- | ----- |
 | Toggle settings | C     |
+| Toggle playlists| P     |
 | Play / Pause    | Space |
 | Next track      | →     |
 | Previous track  | ←     |

@@ -22,8 +22,11 @@ type App struct {
 	accessToken string
 	refreshTok  string
 
-	isExpanded   bool
-	openedUpward bool
+	// expandedPanel is "" when collapsed, otherwise "settings" or
+	// "playlists" - only one panel can be expanded at a time, since
+	// they share the same window-resize mechanism.
+	expandedPanel string
+	openedUpward  bool
 
 	hotkeyMu      sync.Mutex
 	hotkeyConfig  hotkeys.HotkeyConfig
@@ -56,7 +59,6 @@ const (
 
 func NewApp() *App {
 	return &App{
-		isExpanded:    false,
 		activeHotkeys: make(map[string]*hotkey.Hotkey),
 	}
 }
@@ -139,6 +141,8 @@ func (a *App) hotkeyAction(action string) func() {
 	switch action {
 	case "settings":
 		return a.ToggleSettingsPanel
+	case "playlists":
+		return a.TogglePlaylistsPanel
 	case "playPause":
 		return a.PlayPause
 	case "next":
@@ -191,7 +195,29 @@ func (a *App) SetHotkeyBinding(action string, mods []string, key string) error {
 // ToggleSettingsPanel opens/closes the customize panel, resizing (and, if
 // there isn't room to grow downward, repositioning) the window to fit it.
 func (a *App) ToggleSettingsPanel() {
-	a.isExpanded = !a.isExpanded
+	a.togglePanel("settings")
+}
+
+// TogglePlaylistsPanel opens/closes the playlist-picker panel, using the
+// same expand/collapse mechanism as ToggleSettingsPanel.
+func (a *App) TogglePlaylistsPanel() {
+	a.togglePanel("playlists")
+}
+
+// togglePanel shows panel (resizing/repositioning the window, same as
+// the old ToggleSettingsPanel did) unless it's already the one
+// expanded, in which case it collapses back down. Switching directly
+// from one panel to the other - without collapsing in between - leaves
+// the window's size/position alone, since both panels use the same
+// expandedHeight.
+func (a *App) togglePanel(panel string) {
+	wasExpanded := a.expandedPanel != ""
+
+	if a.expandedPanel == panel {
+		a.expandedPanel = ""
+	} else {
+		a.expandedPanel = panel
+	}
 
 	delta := expandedHeight - collapsedHeight
 	// Reuse whatever width is currently set, rather than hardcoding
@@ -200,17 +226,19 @@ func (a *App) ToggleSettingsPanel() {
 	// panel was toggled.
 	width, _ := runtime.WindowGetSize(a.ctx)
 
-	if a.isExpanded {
-		x, y := runtime.WindowGetPosition(a.ctx)
-		screenHeight := a.currentScreenHeight()
+	if a.expandedPanel != "" {
+		if !wasExpanded {
+			x, y := runtime.WindowGetPosition(a.ctx)
+			screenHeight := a.currentScreenHeight()
 
-		if screenHeight > 0 && y+expandedHeight > screenHeight {
-			a.openedUpward = true
-			a.setAbsoluteWindowPosition(x, y-delta)
-		} else {
-			a.openedUpward = false
+			if screenHeight > 0 && y+expandedHeight > screenHeight {
+				a.openedUpward = true
+				a.setAbsoluteWindowPosition(x, y-delta)
+			} else {
+				a.openedUpward = false
+			}
+			runtime.WindowSetSize(a.ctx, width, expandedHeight)
 		}
-		runtime.WindowSetSize(a.ctx, width, expandedHeight)
 	} else {
 		runtime.WindowSetSize(a.ctx, width, collapsedHeight)
 		if a.openedUpward {
@@ -219,7 +247,7 @@ func (a *App) ToggleSettingsPanel() {
 			a.openedUpward = false
 		}
 	}
-	runtime.EventsEmit(a.ctx, "toggle-settings", a.isExpanded)
+	runtime.EventsEmit(a.ctx, "panel-changed", a.expandedPanel)
 }
 
 // setAbsoluteWindowPosition moves the window to an absolute
@@ -559,4 +587,22 @@ func (a *App) GetNowPlaying() playback.PlaybackState {
 		return playback.PlaybackState{}
 	}
 	return state
+}
+
+// GetPlaylists lists the current user's playlists, for the playlist
+// picker panel.
+func (a *App) GetPlaylists() []playback.Playlist {
+	playlists, err := playback.GetPlaylists(a.getToken())
+	if err != nil {
+		return nil
+	}
+	return playlists
+}
+
+// PlayPlaylist starts playback of the playlist at uri from the
+// beginning.
+func (a *App) PlayPlaylist(uri string) {
+	a.withDeviceRevival(func(token string) error {
+		return playback.PlayPlaylist(token, uri)
+	})
 }

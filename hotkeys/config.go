@@ -17,6 +17,7 @@ type HotkeyBinding struct {
 
 type HotkeyConfig struct {
 	Settings   HotkeyBinding `json:"settings"`
+	Playlists  HotkeyBinding `json:"playlists"`
 	PlayPause  HotkeyBinding `json:"playPause"`
 	Next       HotkeyBinding `json:"next"`
 	Previous   HotkeyBinding `json:"previous"`
@@ -26,12 +27,13 @@ type HotkeyConfig struct {
 	VolumeDown HotkeyBinding `json:"volumeDown"`
 }
 
-var Actions = []string{"settings", "playPause", "next", "previous", "shuffle", "loop", "volumeUp", "volumeDown"}
+var Actions = []string{"settings", "playlists", "playPause", "next", "previous", "shuffle", "loop", "volumeUp", "volumeDown"}
 
 func defaultConfig() HotkeyConfig {
 	mods := []string{"ctrl", "alt"}
 	return HotkeyConfig{
 		Settings:   HotkeyBinding{Mods: mods, Key: "c"},
+		Playlists:  HotkeyBinding{Mods: mods, Key: "p"},
 		PlayPause:  HotkeyBinding{Mods: mods, Key: "space"},
 		Next:       HotkeyBinding{Mods: mods, Key: "right"},
 		Previous:   HotkeyBinding{Mods: mods, Key: "left"},
@@ -82,6 +84,8 @@ func (c HotkeyConfig) Binding(action string) (HotkeyBinding, bool) {
 	switch action {
 	case "settings":
 		return c.Settings, true
+	case "playlists":
+		return c.Playlists, true
 	case "playPause":
 		return c.PlayPause, true
 	case "next":
@@ -104,6 +108,8 @@ func (c *HotkeyConfig) SetBinding(action string, b HotkeyBinding) bool {
 	switch action {
 	case "settings":
 		c.Settings = b
+	case "playlists":
+		c.Playlists = b
 	case "playPause":
 		c.PlayPause = b
 	case "next":

@@ -136,6 +136,25 @@ body {
   color: inherit;
 }
 
+#playlists-toggle-btn {
+  flex-shrink: 0;
+  margin-left: 8px;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #757575;
+  font-size: 14px;
+  cursor: pointer;
+  --wails-draggable: no-drag;
+}
+
+#playlists-toggle-btn:hover {
+  color: var(--accent-color);
+  background: rgba(255, 255, 255, 0.08);
+}
+
 #settings-toggle-btn {
   flex-shrink: 0;
   margin-left: 8px;
@@ -188,6 +207,67 @@ body {
   padding: 12px;
   border-top: 1px solid #282828;
   font-family: -apple-system, "Segoe UI", sans-serif;
+}
+
+#playlists-panel {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--fg);
+  padding: 12px;
+  border-top: 1px solid #282828;
+  font-family: -apple-system, "Segoe UI", sans-serif;
+}
+
+#playlist-search-input {
+  flex-shrink: 0;
+  width: 100%;
+  padding: 6px 8px;
+  margin-bottom: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--fg);
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+}
+
+#playlist-search-input:focus {
+  border-color: var(--accent-color);
+}
+
+#playlist-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.playlist-item {
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.playlist-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--accent-color);
+}
+
+.playlist-empty {
+  font-size: 12px;
+  color: #757575;
+  padding: 6px 8px;
 }
 
 #settings-panel h3 {

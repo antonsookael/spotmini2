@@ -4,6 +4,9 @@ import {
   GetHotkeyConfig,
   SetHotkeyBinding,
   ToggleSettingsPanel,
+  TogglePlaylistsPanel,
+  GetPlaylists,
+  PlayPlaylist,
   SnapWindowToEdges,
   DragWindowTo,
   BeginDrag,
@@ -214,14 +217,75 @@ EventsOn('volume-changed', (percent) => {
   }, 1200)
 })
 
-// Listen for the toggle-settings event emitted from Go when Ctrl+Alt+C is pressed
-EventsOn('toggle-settings', (isExpanded) => {
+// Listen for the panel-changed event emitted from Go whenever the
+// settings or playlists panel is toggled, whether that came from a
+// button click or a hotkey.
+EventsOn('panel-changed', (panel) => {
   const settingsPanel = document.getElementById('settings-panel')
-  if (isExpanded) {
-    settingsPanel.classList.remove('hidden')
-  } else {
-    settingsPanel.classList.add('hidden')
+  const playlistsPanel = document.getElementById('playlists-panel')
+
+  settingsPanel.classList.toggle('hidden', panel !== 'settings')
+  playlistsPanel.classList.toggle('hidden', panel !== 'playlists')
+
+  if (panel === 'playlists') {
+    openPlaylistsPanel()
   }
+})
+
+// --- Playlist picker ---
+const playlistSearchInput = document.getElementById('playlist-search-input')
+const playlistListEl = document.getElementById('playlist-list')
+// Cached after the first load - playlists rarely change mid-session,
+// and refetching on every open would add to the shared Spotify app's
+// rate-limit load for no real benefit.
+let allPlaylists = null
+
+function renderPlaylists(playlists) {
+  playlistListEl.innerHTML = ''
+  if (playlists.length === 0) {
+    const empty = document.createElement('li')
+    empty.className = 'playlist-empty'
+    empty.textContent = allPlaylists && allPlaylists.length > 0 ? 'No matches' : 'No playlists found'
+    playlistListEl.appendChild(empty)
+    return
+  }
+  for (const playlist of playlists) {
+    const item = document.createElement('li')
+    item.className = 'playlist-item'
+    item.textContent = playlist.name
+    item.addEventListener('click', () => {
+      PlayPlaylist(playlist.uri)
+      TogglePlaylistsPanel()
+    })
+    playlistListEl.appendChild(item)
+  }
+}
+
+function filterPlaylists() {
+  if (!allPlaylists) return
+  const query = playlistSearchInput.value.trim().toLowerCase()
+  const filtered = query
+    ? allPlaylists.filter((p) => p.name.toLowerCase().includes(query))
+    : allPlaylists
+  renderPlaylists(filtered)
+}
+
+async function openPlaylistsPanel() {
+  playlistSearchInput.value = ''
+  playlistSearchInput.focus()
+
+  if (!allPlaylists) {
+    playlistListEl.innerHTML = '<li class="playlist-empty">Loading...</li>'
+    allPlaylists = (await GetPlaylists()) || []
+  }
+  filterPlaylists()
+}
+
+playlistSearchInput.addEventListener('input', filterPlaylists)
+
+const playlistsToggleBtn = document.getElementById('playlists-toggle-btn')
+playlistsToggleBtn.addEventListener('click', () => {
+  TogglePlaylistsPanel()
 })
 
 // --- Dragging (driven from JS instead of Wails' native --wails-draggable) ---
@@ -249,7 +313,7 @@ let dragStartWinX = 0
 let dragStartWinY = 0
 
 nowPlayingEl.addEventListener('mousedown', async (e) => {
-  if (e.button !== 0 || e.target.closest('#settings-toggle-btn') || e.target.closest('#close-btn')) return
+  if (e.button !== 0 || e.target.closest('#settings-toggle-btn') || e.target.closest('#playlists-toggle-btn') || e.target.closest('#close-btn')) return
 
   dragStartMouseX = e.screenX
   dragStartMouseY = e.screenY
@@ -503,9 +567,10 @@ document.querySelectorAll('.hotkey-btn').forEach((button) => {
 // rebind buttons hidden - built from the same live config, so it stays
 // correct if hotkeys.json is ever edited by hand or the rebind UI comes
 // back.
-const HOTKEY_ACTIONS = ['settings', 'playPause', 'next', 'previous', 'shuffle', 'loop', 'volumeUp', 'volumeDown']
+const HOTKEY_ACTIONS = ['settings', 'playlists', 'playPause', 'next', 'previous', 'shuffle', 'loop', 'volumeUp', 'volumeDown']
 const HOTKEY_LABELS = {
   settings: 'Settings',
+  playlists: 'Playlists',
   playPause: 'Play/Pause',
   next: 'Next',
   previous: 'Prev',
