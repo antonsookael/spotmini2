@@ -24,6 +24,12 @@ type Track struct {
 	DurationMs int      `json:"duration_ms"`
 	Artists    []Artist `json:"artists"`
 	Show       *Show    `json:"show"`
+	// URI is Spotify's own "spotify:track:..."/"spotify:episode:..." URI
+	// scheme - opening it hands off to the desktop app directly (if
+	// installed and registered as the URI handler), unlike the
+	// https://open.spotify.com/... web link, which always opens in a
+	// browser instead.
+	URI string `json:"uri"`
 }
 
 type Artist struct {

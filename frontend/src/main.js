@@ -1,4 +1,4 @@
-import { EventsOn, WindowGetPosition, WindowGetSize, WindowSetSize, WindowSetAlwaysOnTop, Quit } from '../wailsjs/runtime/runtime'
+import { EventsOn, WindowGetPosition, WindowGetSize, WindowSetSize, WindowSetAlwaysOnTop, BrowserOpenURL, Quit } from '../wailsjs/runtime/runtime'
 import {
   GetNowPlaying,
   GetHotkeyConfig,
@@ -28,9 +28,20 @@ let currentSeconds = 0
 let totalSeconds = 0
 let currentSong = ''
 let currentArtist = ''
+let currentSpotifyURI = ''
 let isCurrentlyPlaying = false
 let isShuffled = false
 let repeatState = 'off'
+
+// Clicking the track name/artist opens it in the Spotify app - the
+// spotify:track:.../spotify:episode:... URI scheme hands off to the
+// desktop app directly (if installed), unlike a plain https:// link
+// which always opens in a browser instead. Only wired up when there's
+// actually something playing to link to (render() clears
+// currentSpotifyURI when there isn't).
+trackInfoEl.addEventListener('click', () => {
+  if (currentSpotifyURI) BrowserOpenURL(currentSpotifyURI)
+})
 
 // --- Customization: auto-fit window width ---
 // Off by default - the window stays at its usual 320px and long
@@ -102,6 +113,8 @@ function formatTime(totalSecs) {
 }
 
 function render() {
+  trackInfoEl.classList.toggle('clickable', !!currentSpotifyURI)
+
   if (!currentSong) {
     trackInfoEl.textContent = 'Nothing playing'
     timerEl.textContent = ''
@@ -136,6 +149,7 @@ async function fetchNowPlaying() {
     const state = await GetNowPlaying()
     if (!state.item || !state.item.name) {
       currentSong = ''
+      currentSpotifyURI = ''
       render()
       updateAutoWidth()
       return
@@ -148,6 +162,7 @@ async function fetchNowPlaying() {
       : state.item.show
       ? state.item.show.name
       : ''
+    currentSpotifyURI = state.item.uri || ''
     currentSeconds = Math.floor(state.progress_ms / 1000)
     totalSeconds = Math.floor(state.item.duration_ms / 1000)
     isCurrentlyPlaying = state.is_playing
@@ -156,6 +171,8 @@ async function fetchNowPlaying() {
     render()
     updateAutoWidth()
   } catch (err) {
+    currentSpotifyURI = ''
+    trackInfoEl.classList.remove('clickable')
     trackInfoEl.textContent = 'Error loading playback'
     timerEl.textContent = ''
   }
@@ -448,7 +465,7 @@ let dragStartWinX = 0
 let dragStartWinY = 0
 
 nowPlayingEl.addEventListener('mousedown', async (e) => {
-  if (e.button !== 0 || e.target.closest('#settings-toggle-btn') || e.target.closest('#playlists-toggle-btn') || e.target.closest('#close-btn')) return
+  if (e.button !== 0 || e.target.closest('#settings-toggle-btn') || e.target.closest('#playlists-toggle-btn') || e.target.closest('#close-btn') || e.target.closest('#track-info')) return
 
   dragStartMouseX = e.screenX
   dragStartMouseY = e.screenY

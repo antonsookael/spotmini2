@@ -108,6 +108,15 @@ body {
   white-space: nowrap;
 }
 
+#track-info.clickable {
+  cursor: pointer;
+}
+
+#track-info.clickable:hover {
+  color: var(--accent-color);
+  text-decoration: underline;
+}
+
 #timer {
   flex-shrink: 0;
   margin-left: 12px;
