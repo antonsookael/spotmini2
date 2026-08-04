@@ -129,6 +129,8 @@ func (a *App) setTokens(access, refresh string, expiresIn int) {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 
+	a.restoreWindowPosition()
+
 	go func() {
 		token := backend.GetAccessTokenFull()
 		a.setTokens(token.AccessToken, token.RefreshToken, token.ExpiresIn)
@@ -147,6 +149,12 @@ func (a *App) startup(ctx context.Context) {
 			fmt.Printf("Failed to register %s hotkey: %v\n", action, err)
 		}
 	}
+}
+
+// shutdown persists the window's position so the next launch can
+// restore it.
+func (a *App) shutdown(ctx context.Context) {
+	a.saveWindowPosition()
 }
 
 // applyHotkey registers binding for action, swapping out and unregistering
