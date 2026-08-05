@@ -25,8 +25,11 @@ type App struct {
 	tokenExpiresAt time.Time
 
 	// expandedPanel is "" when collapsed, otherwise "settings" or
-	// "playlists" - only one panel can be expanded at a time, since
-	// they share the same window-resize mechanism.
+	// "playlists" - only one can be open at a time, since they share
+	// the same window-resize mechanism. Guarded because hotkeys fire on
+	// their own goroutines (see watchHotkey) while the frontend calls
+	// the same togglePanel from another.
+	panelMu       sync.Mutex
 	expandedPanel string
 	openedUpward  bool
 
@@ -65,21 +68,15 @@ func NewApp() *App {
 	}
 }
 
-// tokenRefreshBuffer is how far ahead of Spotify's actual token expiry
-// getToken proactively refreshes, so a call right at the boundary
-// doesn't slip through with an already-stale token.
+// Refresh this far before the real expiry, so a call landing right on
+// the boundary doesn't use an already-stale token.
 const tokenRefreshBuffer = 60 * time.Second
 
-// getToken returns the current access token, refreshing it first if
-// it's expired (or about to). This check runs on every call rather
-// than trusting startTokenRefreshLoop's background ticker alone -
-// that ticker is driven by Go's monotonic clock, which effectively
-// pauses while the Mac is asleep, so its countdown only counts awake
-// time. Spotify's actual expiry doesn't care about sleep, so after the
-// Mac's been closed for a while the token can genuinely expire in real
-// time well before the ticker's internal countdown catches up.
-// Checking wall-clock expiry here, on every actual use, is correct
-// regardless of how long the machine was asleep.
+// getToken returns the access token, refreshing first if it's expired.
+// Checks wall-clock expiry on every call rather than trusting
+// startTokenRefreshLoop: that ticker uses the monotonic clock, which
+// pauses while the machine sleeps, so it under-counts real elapsed
+// time and can leave the token stale after a long sleep.
 func (a *App) getToken() string {
 	a.tokenMu.RLock()
 	token := a.accessToken
@@ -94,8 +91,7 @@ func (a *App) getToken() string {
 	a.tokenMu.Lock()
 	defer a.tokenMu.Unlock()
 
-	// Re-check after acquiring the write lock - another goroutine may
-	// have already refreshed it while this one was waiting.
+	// Another goroutine may have refreshed while we waited for the lock.
 	if time.Now().Before(a.tokenExpiresAt.Add(-tokenRefreshBuffer)) {
 		return a.accessToken
 	}
@@ -157,10 +153,9 @@ func (a *App) shutdown(ctx context.Context) {
 	a.saveWindowPosition()
 }
 
-// applyHotkey registers binding for action, swapping out and unregistering
-// any hotkey previously registered for that action. The old hotkey is only
-// torn down after the new one registers successfully, so a bad binding
-// (e.g. one already taken by the OS) doesn't leave the action dead.
+// applyHotkey registers binding for action, replacing any previous one.
+// The old hotkey is only torn down once the new one registers, so a
+// rejected binding doesn't leave the action dead.
 func (a *App) applyHotkey(action string, binding hotkeys.HotkeyBinding) error {
 	hk, err := hotkeys.BindingToHotkey(binding)
 	if err != nil {
@@ -226,9 +221,8 @@ func (a *App) GetHotkeyConfig() hotkeys.HotkeyConfig {
 	return a.hotkeyConfig
 }
 
-// SetHotkeyBinding rebinds action to the given modifiers/key, persists it,
-// and applies it immediately. The previous binding for action stays active
-// if the new one fails to register (e.g. it's already taken by the OS).
+// SetHotkeyBinding rebinds action, persists it, and applies it now.
+// The previous binding stays active if the new one won't register.
 func (a *App) SetHotkeyBinding(action string, mods []string, key string) error {
 	a.hotkeyMu.Lock()
 	if _, ok := a.hotkeyConfig.Binding(action); !ok {
@@ -262,22 +256,20 @@ func (a *App) TogglePlaylistsPanel() {
 	a.togglePanel("playlists")
 }
 
-// ToggleAlwaysOnTop asks the frontend to flip the always-on-top
-// setting, rather than flipping it here. The current value lives in
-// the frontend's localStorage alongside the other customization
-// toggles, so changing it in Go would leave the saved value and the
-// settings checkbox out of sync with the window's actual state.
+// ToggleAlwaysOnTop lets the frontend flip the setting - it owns the
+// value (localStorage) and the checkbox, so flipping it here would
+// desync both.
 func (a *App) ToggleAlwaysOnTop() {
 	runtime.EventsEmit(a.ctx, "toggle-always-on-top")
 }
 
-// togglePanel shows panel (resizing/repositioning the window, same as
-// the old ToggleSettingsPanel did) unless it's already the one
-// expanded, in which case it collapses back down. Switching directly
-// from one panel to the other - without collapsing in between - leaves
-// the window's size/position alone, since both panels use the same
-// expandedHeight.
+// togglePanel expands panel, or collapses if it's already the open
+// one. Switching straight between panels leaves the window size and
+// position alone, since both use expandedHeight.
 func (a *App) togglePanel(panel string) {
+	a.panelMu.Lock()
+	defer a.panelMu.Unlock()
+
 	wasExpanded := a.expandedPanel != ""
 
 	if a.expandedPanel == panel {
@@ -287,10 +279,8 @@ func (a *App) togglePanel(panel string) {
 	}
 
 	delta := expandedHeight - collapsedHeight
-	// Reuse whatever width is currently set, rather than hardcoding
-	// 320 - otherwise this would stomp the width auto-fit sets from
-	// the frontend (see updateAutoWidth in main.js) the moment the
-	// panel was toggled.
+	// Reuse the current width rather than hardcoding 320, which would
+	// stomp whatever auto-fit set (see updateAutoWidth in main.js).
 	width, _ := runtime.WindowGetSize(a.ctx)
 
 	if a.expandedPanel != "" {
@@ -307,14 +297,10 @@ func (a *App) togglePanel(panel string) {
 			runtime.WindowSetSize(a.ctx, width, expandedHeight)
 		}
 		if panel == "playlists" {
-			// A global hotkey can fire while some other app is
-			// focused - AlwaysOnTop only affects z-order, so without
-			// this the window becomes visible but never actually
-			// takes keyboard focus, and the frontend's DOM-level
-			// .focus() on the search input silently does nothing
-			// (keystrokes keep going to whatever app was already
-			// focused). Show() explicitly makes this window key and
-			// activates the app to fix that.
+			// The hotkey can fire while another app is focused, and
+			// AlwaysOnTop only affects z-order - without this the
+			// window shows but never takes keyboard focus, so the
+			// search input's .focus() does nothing.
 			runtime.WindowShow(a.ctx)
 		}
 	} else {
@@ -328,11 +314,9 @@ func (a *App) togglePanel(panel string) {
 	runtime.EventsEmit(a.ctx, "panel-changed", a.expandedPanel)
 }
 
-// setAbsoluteWindowPosition moves the window to an absolute
-// virtual-desktop coordinate. On Windows, runtime.WindowSetPosition
-// doesn't actually take one - see workAreaOriginAt - so this
-// compensates for that before calling through; on other platforms
-// it's a passthrough.
+// setAbsoluteWindowPosition moves the window to an absolute desktop
+// coordinate. Windows needs compensation first (see workAreaOriginAt);
+// elsewhere it's a passthrough.
 func (a *App) setAbsoluteWindowPosition(x, y int) {
 	curX, curY := runtime.WindowGetPosition(a.ctx)
 	width, height := runtime.WindowGetSize(a.ctx)
@@ -345,13 +329,10 @@ func (a *App) setAbsoluteWindowPosition(x, y int) {
 	runtime.WindowSetPosition(a.ctx, x-originX, y-originY)
 }
 
-// BeginDrag captures the coordinate-compensation origin (see
-// workAreaOriginAt) once at the start of a drag, so DragWindowTo can
-// reuse it on every subsequent frame instead of re-resolving it (two
-// syscalls, plus a position/size query) on every single mousemove -
-// that per-frame cost was compounding with the OS's own redraw cost
-// for a larger window (e.g. with the settings panel open) into
-// noticeably laggy dragging.
+// BeginDrag resolves the coordinate-compensation origin (see
+// workAreaOriginAt) once per drag so DragWindowTo can reuse it. Doing
+// it per-mousemove instead cost two syscalls plus a size query every
+// frame, which made dragging visibly laggy.
 func (a *App) BeginDrag() {
 	x, y := runtime.WindowGetPosition(a.ctx)
 	width, height := runtime.WindowGetSize(a.ctx)
@@ -364,22 +345,18 @@ func (a *App) BeginDrag() {
 	a.dragMu.Unlock()
 }
 
-// EndDrag marks the drag as finished, so a stray DragWindowTo call that
-// arrives after mouseup (the frontend's own rAF throttling makes this
-// unlikely, but not impossible) falls back to resolving its origin
-// fresh rather than reusing a now-stale cached one.
+// EndDrag marks the drag finished, so a stray DragWindowTo arriving
+// after mouseup resolves a fresh origin instead of a stale cached one.
 func (a *App) EndDrag() {
 	a.dragMu.Lock()
 	a.dragActive = false
 	a.dragMu.Unlock()
 }
 
-// DragWindowTo moves the window to an absolute virtual-desktop
-// coordinate. The frontend calls this on every mousemove while
-// dragging (see main.js) instead of calling the Wails runtime's
-// WindowSetPosition directly, since only Go can correctly translate an
-// absolute target into whatever coordinate space it actually expects
-// on this platform.
+// DragWindowTo moves the window to an absolute desktop coordinate.
+// The frontend calls this per mousemove rather than the Wails runtime
+// directly, since only Go can translate into the coordinate space each
+// platform actually expects.
 func (a *App) DragWindowTo(x, y int) {
 	a.dragMu.Lock()
 	active := a.dragActive
@@ -424,12 +401,9 @@ func (a *App) currentScreenHeight() int {
 	return screen.Size.Height
 }
 
-// SnapWindowToEdges snaps the window flush against any nearby screen
-// edge. The frontend drives its own drag (tracking mousedown/mousemove/
-// mouseup itself instead of relying on the OS's native drag, which
-// swallows the mouseup) and calls this the instant the mouse button is
-// released, so the snap only ever fires on an actual release - never
-// mid-drag.
+// SnapWindowToEdges snaps the window flush against a nearby screen
+// edge. Called by the frontend on mouseup, so it only ever fires on a
+// real release, never mid-drag.
 func (a *App) SnapWindowToEdges() {
 	x, y := runtime.WindowGetPosition(a.ctx)
 	a.snapToEdges(x, y)
@@ -440,11 +414,9 @@ func (a *App) SnapWindowToEdges() {
 func (a *App) snapToEdges(x, y int) {
 	width, height := runtime.WindowGetSize(a.ctx)
 
-	// Prefer the real bounds of whichever monitor the window is
-	// actually on (accounts for monitor position on a multi-monitor
-	// setup). Fall back to Wails' screen size, assuming it starts at
-	// the desktop origin, when there's no native lookup for this OS -
-	// only correct for a single monitor, but no worse than before.
+	// Prefer the real bounds of the monitor the window is on. Falling
+	// back to Wails' screen size assumes a desktop origin, so it's only
+	// correct on a single monitor.
 	left, top, right, bottom, ok := monitorBoundsAt(x+width/2, y+height/2)
 	if !ok {
 		screen, found := a.currentScreen()
@@ -474,12 +446,9 @@ func (a *App) snapToEdges(x, y int) {
 	}
 }
 
-// startTokenRefreshLoop proactively refreshes the token every 50
-// minutes while the app is actively running, so a call doesn't have to
-// stall on a refresh mid-request in the common case. It's a nice-to-
-// have, not the actual correctness guarantee: getToken's own
-// wall-clock expiry check is what catches the token going stale during
-// a long sleep, since this ticker's countdown can't.
+// startTokenRefreshLoop refreshes every 50 minutes so calls rarely
+// stall on a refresh. Just an optimisation - getToken's expiry check
+// is what actually guarantees a valid token.
 func (a *App) startTokenRefreshLoop() {
 	ticker := time.NewTicker(50 * time.Minute)
 	defer ticker.Stop()
@@ -562,32 +531,21 @@ func (a *App) VolumeDown() {
 	a.adjustVolume(-volumeStep)
 }
 
-// volumeCacheWindow is how long adjustVolume trusts the volume it last
-// applied itself instead of re-fetching from Spotify. Rapid successive
-// presses land faster than Spotify's read API reliably reflects a
-// just-written value, so re-fetching "current" on every single press
-// can read a stale pre-change volume and silently compute the same
-// target twice, swallowing one of the presses. A short cache sidesteps
-// that while still resyncing with any volume change made outside this
-// app (Spotify's own UI, another device) after a brief idle period.
+// How long adjustVolume trusts its own last-applied value instead of
+// re-reading. Spotify's read API lags a just-written volume, so rapid
+// presses would keep reading the pre-change value and compute the same
+// target twice, swallowing presses. Short enough to still pick up
+// changes made elsewhere.
 const volumeCacheWindow = 2 * time.Second
 
-// adjustVolume changes the active device's volume by delta percentage
-// points relative to its current value, then emits "volume-changed" so
-// the frontend can show an indicator. Only caches/emits when the
-// change actually landed - withDeviceRevival's return value tells us
-// that, rather than assuming success the way the other playback
-// actions get away with (they're idempotent-ish and self-correct via
-// the next poll; volume isn't polled anywhere, so a failed change
-// still "succeeding" here would desync lastVolume from Spotify's real
-// value with nothing to ever notice or fix it).
+// adjustVolume shifts the active device's volume by delta and emits
+// "volume-changed" for the indicator. Only caches/emits on success:
+// volume is never polled, so a failed change recorded as applied would
+// desync lastVolume permanently.
 //
-// volumeMu is held for the whole read-adjust-write, not just around the
-// cache access - volumeUp and volumeDown are separate hotkey actions,
-// each watched by its own goroutine (see watchHotkey), so pressing both
-// in quick succession runs two of these concurrently. Only serializing
-// the cache access would still let both read the same starting point
-// before either's write lands.
+// The lock covers the whole read-adjust-write, not just the cache -
+// volumeUp and volumeDown run on separate goroutines, so guarding only
+// the cache would still let both read the same starting value.
 func (a *App) adjustVolume(delta int) {
 	token := a.getToken()
 
@@ -618,28 +576,18 @@ func (a *App) adjustVolume(delta int) {
 	runtime.EventsEmit(a.ctx, "volume-changed", applied)
 }
 
-// withDeviceRevival runs action and, if it fails specifically because
-// Spotify has dropped the active device (which happens after one sits
-// idle for a while), revives a device and retries the exact same
-// action - so a command that only failed because of the idle timeout
-// still ends up doing what it was asked to do. Emits "playback-changed"
-// afterwards so the frontend can resync immediately instead of waiting
-// for its next periodic poll - unless the account just isn't allowed to
-// do this at all, in which case it emits "premium-required" instead and
-// skips "playback-changed": nothing actually changed, and the frontend
-// displays that message in place of the track info for a few seconds,
-// which the normal resync would otherwise immediately overwrite.
-// Returns the final error from action, for callers (like adjustVolume)
-// that need to know whether it ultimately succeeded - most callers just
-// ignore it, same fire-and-forget as before.
+// withDeviceRevival runs action, and retries it once after reviving a
+// device if Spotify had dropped the active one for being idle. Emits
+// "playback-changed" so the frontend resyncs immediately - except on a
+// Premium rejection, which emits "premium-required" instead and skips
+// the resync that would otherwise wipe that message. Returns action's
+// final error; most callers ignore it.
 func (a *App) withDeviceRevival(action func(token string) error) error {
 	token := a.getToken()
 	err := action(token)
 	if errors.Is(err, playback.ErrNoActiveDevice) && a.reviveDevice(token) {
-		// Transferring playback doesn't take effect instantly - retrying
-		// right away tends to hit Spotify before the device is actually
-		// marked active again, so the retry itself fails. A short wait
-		// gives the transfer time to land first.
+		// The transfer isn't instant; retrying immediately hits
+		// Spotify before the device is marked active again.
 		time.Sleep(1500 * time.Millisecond)
 		err = action(token)
 	}
@@ -652,9 +600,8 @@ func (a *App) withDeviceRevival(action func(token string) error) error {
 }
 
 // reviveDevice transfers playback to an available device without
-// forcing playback to start - the action that triggered the revival
-// gets retried right after, and that's what decides what actually
-// happens next. Returns true if a device was found to transfer to.
+// starting it - the retried action decides what happens next. Returns
+// true if a device was found.
 func (a *App) reviveDevice(token string) bool {
 	devices, err := playback.GetDevices(token)
 	if err != nil || len(devices) == 0 {
@@ -699,9 +646,8 @@ func (a *App) PlayPlaylist(uri string) {
 	})
 }
 
-// PlayLikedSongs starts playback of the user's most recently saved
-// tracks - Liked Songs has no playlist URI to hand to PlayPlaylist, so
-// this fetches actual track URIs first and plays those directly.
+// PlayLikedSongs plays the most recently saved tracks. Liked Songs has
+// no playlist URI, so it plays explicit track URIs instead.
 func (a *App) PlayLikedSongs() {
 	token := a.getToken()
 	uris, err := playback.GetLikedSongURIs(token)
@@ -717,11 +663,8 @@ func (a *App) PlayLikedSongs() {
 	})
 }
 
-// SearchTracks searches Spotify's catalog for tracks matching query,
-// for the song-search half of the playlist picker's search box. An
-// empty/whitespace-only query returns no results without making a
-// request - the frontend already skips calling this in that case, but
-// it's cheap insurance against a stray call.
+// SearchTracks searches Spotify's catalog for the picker's search box.
+// A blank query short-circuits rather than hitting the API.
 func (a *App) SearchTracks(query string) []playback.TrackResult {
 	if strings.TrimSpace(query) == "" {
 		return nil

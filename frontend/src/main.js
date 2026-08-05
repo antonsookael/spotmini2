@@ -32,22 +32,20 @@ let currentSpotifyURI = ''
 let isCurrentlyPlaying = false
 let isShuffled = false
 let repeatState = 'off'
+// Timestamp the premium notice holds the track-info slot until; read by
+// render(), set by the premium-required handler further down.
+let premiumMessageUntil = 0
 
-// Clicking the track name/artist opens it in the Spotify app - the
-// spotify:track:.../spotify:episode:... URI scheme hands off to the
-// desktop app directly (if installed), unlike a plain https:// link
-// which always opens in a browser instead. Only wired up when there's
-// actually something playing to link to (render() clears
-// currentSpotifyURI when there isn't).
+// The spotify: URI scheme hands off to the desktop app, unlike an
+// https:// link which always opens a browser. currentSpotifyURI is
+// empty when there's nothing to link to.
 trackInfoEl.addEventListener('click', () => {
   if (currentSpotifyURI) BrowserOpenURL(currentSpotifyURI)
 })
 
 // --- Customization: auto-fit window width ---
-// Off by default - the window stays at its usual 320px and long
-// titles get ellipsized, same as always. Turned on, it widens (up to
-// MAX_WIDTH) to fit the current song name and artist, then shrinks
-// back down to MIN_WIDTH once they're short again.
+// Off by default (titles just ellipsize). On, the window widens to fit
+// the track name and artist, up to MAX_WIDTH.
 const MIN_WIDTH = 320
 const MAX_WIDTH = 640
 
@@ -62,14 +60,10 @@ autoFitToggle.addEventListener('change', (e) => {
   }
 })
 
-// measureNeededBarWidth briefly lets #now-playing shrink-wrap its
-// content (instead of staying pinned to the window's current 100%
-// width) and #track-info grow past its normal flex/ellipsis
-// constraints, to find out how wide the bar actually needs to be to
-// show the current text in full, then puts those styles back. Without
-// the bar's own width being freed up too, its scrollWidth could only
-// ever report growth (real overflow past the current window width),
-// never shrinkage - it doesn't drop below the width it's pinned to.
+// Briefly frees #now-playing from its 100% width and #track-info from
+// its ellipsis constraints to measure how wide the bar really needs to
+// be, then restores both. The bar's own width has to be freed too, or
+// scrollWidth can only ever report growth, never shrinkage.
 function measureNeededBarWidth() {
   const bar = document.getElementById('now-playing')
   const prevBarWidth = bar.style.width
@@ -113,6 +107,11 @@ function formatTime(totalSecs) {
 }
 
 function render() {
+  // The premium notice owns the track-info slot until it expires -
+  // otherwise the once-a-second tick below would overwrite it almost
+  // immediately, long before it could be read.
+  if (Date.now() < premiumMessageUntil) return
+
   trackInfoEl.classList.toggle('clickable', !!currentSpotifyURI)
 
   if (!currentSong) {
@@ -133,8 +132,7 @@ function render() {
 
   loopIconEl.classList.remove('hidden')
   loopIconEl.classList.toggle('active', repeatState !== 'off')
-  // Repeat-one gets a small "1" badge on the same icon, so it's
-  // distinguishable from repeating the whole playlist/album at a glance.
+  // A "1" badge distinguishes repeat-one from repeat-all.
   loopOneBadgeEl.classList.toggle('hidden', repeatState !== 'track')
 
   trackInfoEl.textContent = currentArtist ? `${currentSong} - ${currentArtist}` : currentSong
@@ -142,8 +140,7 @@ function render() {
     `${formatTime(currentSeconds)}/${formatTime(totalSeconds)}`
 }
 
-// fetchNowPlaying calls into Go, which calls Spotify, and resets our
-// local counter to match reality.
+// Re-syncs the local counter with Spotify's actual state.
 async function fetchNowPlaying() {
   try {
     const state = await GetNowPlaying()
@@ -178,8 +175,8 @@ async function fetchNowPlaying() {
   }
 }
 
-// Local ticker - counts up once per second without calling Go/Spotify,
-// re-syncing periodically. Same pattern as the old Fyne version.
+// Local ticker - counts up each second without hitting Spotify,
+// re-syncing periodically.
 let secondsSinceSync = 0
 let idleSecondsSinceCheck = 0
 
@@ -216,9 +213,8 @@ EventsOn('logged-in', () => {
   fetchNowPlaying()
 })
 
-// Emitted by Go right after a play/pause/next/previous/shuffle command -
-// re-syncs immediately instead of waiting for the next periodic poll, so
-// the status dot reflects the change right away.
+// Emitted after any playback command, so the UI reflects it right away
+// instead of waiting for the next poll.
 EventsOn('playback-changed', () => {
   setTimeout(fetchNowPlaying, 300)
 })
@@ -242,16 +238,14 @@ EventsOn('volume-changed', (percent) => {
   showToast(`Vol ${percent}%`)
 })
 
-// Emitted by Go when a playback command fails specifically because the
-// account isn't Premium - Spotify's playback control endpoints reject
-// every Free-tier request outright, and without this a Free user just
-// sees nothing happen with no indication why. Shown in place of the
-// track info (same spot as "Nothing playing"/"Error loading playback")
-// rather than as a toast, then restored by re-fetching once the
-// message has had time to be read.
+// Spotify rejects every playback command on a Free account, so without
+// this a Free user sees nothing happen and no reason why. Shown in the
+// track-info slot rather than as a toast, then cleared by re-fetching.
+const PREMIUM_MESSAGE_MS = 3000
 let premiumMessageTimeout = null
 
 EventsOn('premium-required', () => {
+  premiumMessageUntil = Date.now() + PREMIUM_MESSAGE_MS
   trackInfoEl.textContent = 'Spotify Premium is required for playback control'
   timerEl.textContent = ''
   statusDotEl.classList.add('hidden')
@@ -259,12 +253,13 @@ EventsOn('premium-required', () => {
   loopIconEl.classList.add('hidden')
 
   clearTimeout(premiumMessageTimeout)
-  premiumMessageTimeout = setTimeout(fetchNowPlaying, 3000)
+  premiumMessageTimeout = setTimeout(() => {
+    premiumMessageUntil = 0
+    fetchNowPlaying()
+  }, PREMIUM_MESSAGE_MS)
 })
 
-// Listen for the panel-changed event emitted from Go whenever the
-// settings or playlists panel is toggled, whether that came from a
-// button click or a hotkey.
+// Fired whenever a panel is toggled, by button or hotkey.
 EventsOn('panel-changed', (panel) => {
   const settingsPanel = document.getElementById('settings-panel')
   const playlistsPanel = document.getElementById('playlists-panel')
@@ -280,11 +275,9 @@ EventsOn('panel-changed', (panel) => {
 // --- Playlist + song picker ---
 const playlistSearchInput = document.getElementById('playlist-search-input')
 const playlistListEl = document.getElementById('playlist-list')
-// Cached after the first load - playlists rarely change mid-session,
-// and refetching on every open would add to the shared Spotify app's
-// rate-limit load for no real benefit. Track search can't be cached
-// the same way (the catalog is far too large to pre-fetch), so that
-// half is always a live, debounced API call instead.
+// Cached after first load; playlists rarely change mid-session and the
+// Spotify client ID is shared across all users. Track search can't be
+// cached, so it stays a live debounced call.
 let allPlaylists = null
 
 function makeDivider(label) {
@@ -294,10 +287,8 @@ function makeDivider(label) {
   return el
 }
 
-// renderResults shows playlists and tracks as two visually distinct
-// groups (single-line items vs two-line name+artist items with a save
-// button) - only labeled with a divider when both groups actually have
-// results, so the common case of matching just one type stays clean.
+// Renders playlists and tracks as two groups, only labelled with
+// dividers when both actually have results.
 function renderResults(playlists, tracks) {
   playlistListEl.innerHTML = ''
 
@@ -355,8 +346,7 @@ function renderResults(playlists, tracks) {
       saveBtn.className = 'track-item-save'
       saveBtn.title = 'Add to Liked Songs'
       saveBtn.textContent = '+'
-      // Its own click target, separate from info's - without stopping
-      // propagation this would also trigger the row's play-on-click.
+      // Without stopPropagation this also triggers the row's play.
       saveBtn.addEventListener('click', (e) => {
         e.stopPropagation()
         SaveTrackToLiked(track.id)
@@ -371,9 +361,7 @@ function renderResults(playlists, tracks) {
   }
 }
 
-// searchToken guards against a slow request resolving after a newer
-// one was already fired for a later keystroke - without it, an
-// out-of-order response could overwrite fresher results with stale ones.
+// Guards against a slow response overwriting fresher results.
 let searchToken = 0
 let trackSearchTimeout = null
 
@@ -392,9 +380,8 @@ function filterPlaylists() {
     return
   }
 
-  // Playlist matches are local and render immediately; song matches
-  // need a live Spotify search, so they're debounced and filled in
-  // once the request resolves.
+  // Playlists match locally and render now; songs need a debounced
+  // API call and fill in once it resolves.
   renderResults(filteredPlaylists, [])
   const thisSearch = searchToken
   trackSearchTimeout = setTimeout(async () => {
@@ -410,9 +397,8 @@ async function openPlaylistsPanel() {
 
   if (!allPlaylists) {
     playlistListEl.innerHTML = '<li class="playlist-empty">Loading...</li>'
-    // Liked Songs isn't a real playlist Spotify returns from
-    // GetPlaylists - pinned at the top here so it's always available
-    // and still matches the search filter like everything else.
+    // Liked Songs isn't a real playlist, so it's pinned on manually -
+    // still searchable like the rest.
     allPlaylists = [{ name: 'Liked Songs', liked: true }, ...((await GetPlaylists()) || [])]
   }
   filterPlaylists()
@@ -425,11 +411,9 @@ playlistsToggleBtn.addEventListener('click', () => {
   TogglePlaylistsPanel()
 })
 
-// --- Dragging (driven from JS instead of Wails' native --wails-draggable) ---
-// The native drag hands the OS a modal move loop that swallows mouseup,
-// so there's no reliable moment to know the drag actually ended - which
-// is what edge-snapping needs. Tracking the drag ourselves means mouseup
-// fires normally and we can snap right on release, never mid-drag.
+// --- Dragging (JS-driven, not Wails' --wails-draggable) ---
+// The native drag runs a modal OS move loop that swallows mouseup, so
+// there's no reliable "drag ended" moment - which edge-snapping needs.
 const nowPlayingEl = document.getElementById('now-playing')
 const edgeSnapToggle = document.getElementById('edge-snap-toggle')
 
@@ -439,9 +423,8 @@ edgeSnapToggle.addEventListener('change', (e) => {
 })
 
 // --- Customization: always on top ---
-// main.go starts the window with AlwaysOnTop: true - this just lets it
-// be turned off for anyone who only wants the global hotkeys/controls
-// without the window floating over everything else.
+// main.go starts with AlwaysOnTop: true; this just allows turning it
+// off.
 const alwaysOnTopToggle = document.getElementById('always-on-top-toggle')
 
 const savedAlwaysOnTop = localStorage.getItem('alwaysOnTop') !== 'false'
@@ -453,9 +436,8 @@ alwaysOnTopToggle.addEventListener('change', (e) => {
   WindowSetAlwaysOnTop(e.target.checked)
 })
 
-// Emitted by Go when the always-on-top hotkey is pressed. Flipping the
-// checkbox here (rather than in Go) keeps localStorage, the checkbox,
-// and the window's actual state in sync - see ToggleAlwaysOnTop.
+// Flipping here rather than in Go keeps localStorage, the checkbox and
+// the window state in sync - see ToggleAlwaysOnTop.
 EventsOn('toggle-always-on-top', () => {
   const next = !alwaysOnTopToggle.checked
   alwaysOnTopToggle.checked = next
@@ -464,10 +446,9 @@ EventsOn('toggle-always-on-top', () => {
 })
 
 let dragging = false
-// True from mousedown until mouseup, regardless of whether the async
-// WindowGetPosition() below has resolved yet - lets mouseup cancel a
-// drag that's still starting up instead of only being able to cancel
-// one that's already flagged `dragging`.
+// True from mousedown to mouseup regardless of whether the async
+// WindowGetPosition() has resolved, so mouseup can cancel a drag that's
+// still starting up.
 let dragSessionActive = false
 let dragStartMouseX = 0
 let dragStartMouseY = 0
@@ -634,10 +615,8 @@ closeBtn.addEventListener('click', () => {
 
 const KEY_LABELS = { space: 'Space', left: '←', right: '→', up: '↑', down: '↓' }
 const MOD_LABELS = { ctrl: 'Ctrl', alt: 'Alt', shift: 'Shift', cmd: 'Cmd' }
-// Alt is labelled Option on a Mac keyboard, so "Ctrl+Alt+T" names a
-// key that isn't there. Written out rather than using the native
-// ⌃⌥⇧⌘ symbols, which are only legible to people who already know
-// them.
+// Alt is labelled Option on Mac keyboards. Spelled out rather than the
+// native ⌃⌥⇧⌘ symbols, which aren't obvious to everyone.
 const MOD_LABELS_MAC = { ctrl: 'Ctrl', alt: 'Opt', shift: 'Shift', cmd: 'Cmd' }
 
 // Swapped to the macOS set once Environment() resolves (see below).
@@ -751,10 +730,9 @@ const HOTKEY_LABELS = {
   alwaysOnTop: 'On top',
 }
 
-// Environment() is fetched alongside the config rather than separately,
-// so the labels are already switched to the right platform's before
-// anything gets formatted - otherwise the summary would render once
-// with the wrong modifier names and then correct itself.
+// Fetched alongside the config so labels are already correct before
+// anything formats - otherwise the summary renders wrong, then fixes
+// itself.
 Promise.all([GetHotkeyConfig(), Environment()]).then(([cfg, env]) => {
   if (env.platform === 'darwin') {
     modLabels = MOD_LABELS_MAC

@@ -16,11 +16,9 @@ type windowPosition struct {
 	Y int `json:"y"`
 }
 
-// saveWindowPosition records where the window currently sits, so the
-// next launch can put it back there. Called on shutdown rather than on
-// every move - the frontend drives dragging frame by frame (see
-// DragWindowTo), and writing a file on each of those would mean
-// hundreds of writes per drag.
+// saveWindowPosition records the window position for the next launch.
+// Called on shutdown, not per move - dragging is frame by frame, which
+// would mean hundreds of writes per drag.
 func (a *App) saveWindowPosition() {
 	x, y := runtime.WindowGetPosition(a.ctx)
 
@@ -35,12 +33,10 @@ func (a *App) saveWindowPosition() {
 	os.WriteFile(path, data, 0644)
 }
 
-// restoreWindowPosition moves the window back to its last saved spot,
-// then snaps it to the nearest screen edge if it's close to one -
-// without that, a window saved flush against an edge can end up a few
-// pixels off after restore, since a saved position is only valid for
-// the screen layout it was saved under (an unplugged monitor or a
-// changed resolution moves where that edge actually is).
+// restoreWindowPosition returns the window to its last spot, then
+// re-snaps if it's near an edge - a saved position is only valid for
+// the layout it was saved under, so a changed display can leave a
+// previously flush window slightly off.
 func (a *App) restoreWindowPosition() {
 	path, err := paths.ConfigFile(windowPosFile)
 	if err != nil {

@@ -12,27 +12,19 @@ typedef struct {
 	int ok;
 } MonitorBounds;
 
-// currentMonitorBounds returns the full screen (not just the visible
-// work area) of whichever screen the app's window is on, translated
-// into the coordinate space Wails' own GetPosition/SetPosition use on
-// macOS: top-down and relative to that screen's *visible* frame origin
-// (see WailsContext.m's SetPosition/GetPosition, which measure against
-// -screen.visibleFrame, not -screen.frame). Matching Windows'
-// monitorBoundsAt (which uses the full RcMonitor rect, not the
-// taskbar-excluded work area), this lets the window snap flush against
-// the true screen edge, tucking behind the menu bar/Dock rather than
-// stopping short of it.
+// currentMonitorBounds returns the full screen rect (not the visible
+// work area) of the screen the window is on, in the coordinate space
+// Wails' GetPosition/SetPosition use on macOS: top-down, relative to
+// that screen's *visible* frame origin. Like Windows' monitorBoundsAt
+// it uses the full rect, so the window can snap flush to the true edge
+// and tuck behind the menu bar/Dock.
 //
-// The four bounds are derived from screen.frame (F) and
-// screen.visibleFrame (V), both in Cocoa's native bottom-left-origin,
-// y-up space, by inverting Wails' own coordinate transform:
+// Derived from screen.frame (F) and visibleFrame (V), inverting Wails'
+// transform out of Cocoa's bottom-left-origin space:
 //   left   = F.origin.x - V.origin.x
 //   right  = left + F.width
 //   bottom = (V.origin.y - F.origin.y) + V.height
 //   top    = bottom - F.height
-// Each works out independent of window size, so callers don't need to
-// know the window's dimensions to use them (right-left and bottom-top
-// both always equal the screen's full width/height).
 MonitorBounds currentMonitorBounds() {
 	MonitorBounds mb = {0, 0, 0, 0, 0};
 

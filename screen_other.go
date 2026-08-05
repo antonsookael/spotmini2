@@ -2,16 +2,14 @@
 
 package main
 
-// monitorBoundsAt has no native implementation outside Windows and
-// macOS yet - callers fall back to assuming the current screen sits at
-// the desktop origin, which is only correct on a single-monitor setup.
+// No native implementation outside Windows/macOS - callers assume the
+// screen sits at the desktop origin, only true for one monitor.
 func monitorBoundsAt(x, y int) (left, top, right, bottom int, ok bool) {
 	return 0, 0, 0, 0, false
 }
 
-// workAreaOriginAt has no native implementation outside Windows -
-// WindowSetPosition on other platforms is assumed to take a true
-// absolute desktop coordinate already, so no compensation is needed.
+// Only Windows needs this; elsewhere WindowSetPosition already takes
+// an absolute desktop coordinate.
 func workAreaOriginAt(x, y int) (originX, originY int, ok bool) {
 	return 0, 0, false
 }
