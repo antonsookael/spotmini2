@@ -262,16 +262,6 @@ func (a *App) TogglePlaylistsPanel() {
 	a.togglePanel("playlists")
 }
 
-// SetAlwaysOnTop floats the window above other windows, and - on macOS
-// only - above other apps' fullscreen Spaces too. The frontend calls
-// this instead of the Wails runtime's WindowSetAlwaysOnTop directly,
-// since that alone doesn't cover the fullscreen case (see
-// setFloatOverFullscreen).
-func (a *App) SetAlwaysOnTop(onTop bool) {
-	runtime.WindowSetAlwaysOnTop(a.ctx, onTop)
-	setFloatOverFullscreen(onTop)
-}
-
 // ToggleAlwaysOnTop asks the frontend to flip the always-on-top
 // setting, rather than flipping it here. The current value lives in
 // the frontend's localStorage alongside the other customization

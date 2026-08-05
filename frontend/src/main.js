@@ -1,11 +1,10 @@
-import { EventsOn, Environment, WindowGetPosition, WindowGetSize, WindowSetSize, BrowserOpenURL, Quit } from '../wailsjs/runtime/runtime'
+import { EventsOn, Environment, WindowGetPosition, WindowGetSize, WindowSetSize, WindowSetAlwaysOnTop, BrowserOpenURL, Quit } from '../wailsjs/runtime/runtime'
 import {
   GetNowPlaying,
   GetHotkeyConfig,
   SetHotkeyBinding,
   ToggleSettingsPanel,
   TogglePlaylistsPanel,
-  SetAlwaysOnTop,
   GetPlaylists,
   PlayPlaylist,
   PlayLikedSongs,
@@ -442,19 +441,16 @@ edgeSnapToggle.addEventListener('change', (e) => {
 // --- Customization: always on top ---
 // main.go starts the window with AlwaysOnTop: true - this just lets it
 // be turned off for anyone who only wants the global hotkeys/controls
-// without the window floating over everything else. Goes through Go
-// (SetAlwaysOnTop) rather than the Wails runtime call directly, since
-// on macOS floating over a fullscreen app needs more than a window
-// level - see setFloatOverFullscreen.
+// without the window floating over everything else.
 const alwaysOnTopToggle = document.getElementById('always-on-top-toggle')
 
 const savedAlwaysOnTop = localStorage.getItem('alwaysOnTop') !== 'false'
 alwaysOnTopToggle.checked = savedAlwaysOnTop
-SetAlwaysOnTop(savedAlwaysOnTop)
+WindowSetAlwaysOnTop(savedAlwaysOnTop)
 
 alwaysOnTopToggle.addEventListener('change', (e) => {
   localStorage.setItem('alwaysOnTop', e.target.checked)
-  SetAlwaysOnTop(e.target.checked)
+  WindowSetAlwaysOnTop(e.target.checked)
 })
 
 // Emitted by Go when the always-on-top hotkey is pressed. Flipping the
@@ -464,7 +460,7 @@ EventsOn('toggle-always-on-top', () => {
   const next = !alwaysOnTopToggle.checked
   alwaysOnTopToggle.checked = next
   localStorage.setItem('alwaysOnTop', next)
-  SetAlwaysOnTop(next)
+  WindowSetAlwaysOnTop(next)
 })
 
 let dragging = false
