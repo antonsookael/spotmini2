@@ -1,10 +1,11 @@
-import { EventsOn, WindowGetPosition, WindowGetSize, WindowSetSize, WindowSetAlwaysOnTop, BrowserOpenURL, Quit } from '../wailsjs/runtime/runtime'
+import { EventsOn, Environment, WindowGetPosition, WindowGetSize, WindowSetSize, BrowserOpenURL, Quit } from '../wailsjs/runtime/runtime'
 import {
   GetNowPlaying,
   GetHotkeyConfig,
   SetHotkeyBinding,
   ToggleSettingsPanel,
   TogglePlaylistsPanel,
+  SetAlwaysOnTop,
   GetPlaylists,
   PlayPlaylist,
   PlayLikedSongs,
@@ -441,16 +442,29 @@ edgeSnapToggle.addEventListener('change', (e) => {
 // --- Customization: always on top ---
 // main.go starts the window with AlwaysOnTop: true - this just lets it
 // be turned off for anyone who only wants the global hotkeys/controls
-// without the window floating over everything else.
+// without the window floating over everything else. Goes through Go
+// (SetAlwaysOnTop) rather than the Wails runtime call directly, since
+// on macOS floating over a fullscreen app needs more than a window
+// level - see setFloatOverFullscreen.
 const alwaysOnTopToggle = document.getElementById('always-on-top-toggle')
 
 const savedAlwaysOnTop = localStorage.getItem('alwaysOnTop') !== 'false'
 alwaysOnTopToggle.checked = savedAlwaysOnTop
-WindowSetAlwaysOnTop(savedAlwaysOnTop)
+SetAlwaysOnTop(savedAlwaysOnTop)
 
 alwaysOnTopToggle.addEventListener('change', (e) => {
   localStorage.setItem('alwaysOnTop', e.target.checked)
-  WindowSetAlwaysOnTop(e.target.checked)
+  SetAlwaysOnTop(e.target.checked)
+})
+
+// Emitted by Go when the always-on-top hotkey is pressed. Flipping the
+// checkbox here (rather than in Go) keeps localStorage, the checkbox,
+// and the window's actual state in sync - see ToggleAlwaysOnTop.
+EventsOn('toggle-always-on-top', () => {
+  const next = !alwaysOnTopToggle.checked
+  alwaysOnTopToggle.checked = next
+  localStorage.setItem('alwaysOnTop', next)
+  SetAlwaysOnTop(next)
 })
 
 let dragging = false
@@ -624,10 +638,18 @@ closeBtn.addEventListener('click', () => {
 
 const KEY_LABELS = { space: 'Space', left: '←', right: '→', up: '↑', down: '↓' }
 const MOD_LABELS = { ctrl: 'Ctrl', alt: 'Alt', shift: 'Shift', cmd: 'Cmd' }
+// Alt is labelled Option on a Mac keyboard, so "Ctrl+Alt+T" names a
+// key that isn't there. Written out rather than using the native
+// ⌃⌥⇧⌘ symbols, which are only legible to people who already know
+// them.
+const MOD_LABELS_MAC = { ctrl: 'Ctrl', alt: 'Opt', shift: 'Shift', cmd: 'Cmd' }
+
+// Swapped to the macOS set once Environment() resolves (see below).
+let modLabels = MOD_LABELS
 
 function formatBinding(binding) {
   if (!binding) return '...'
-  const parts = binding.mods.map((m) => MOD_LABELS[m] || m)
+  const parts = binding.mods.map((m) => modLabels[m] || m)
   parts.push(KEY_LABELS[binding.key] || binding.key.toUpperCase())
   return parts.join('+')
 }
@@ -719,7 +741,7 @@ document.querySelectorAll('.hotkey-btn').forEach((button) => {
 // rebind buttons hidden - built from the same live config, so it stays
 // correct if hotkeys.json is ever edited by hand or the rebind UI comes
 // back.
-const HOTKEY_ACTIONS = ['settings', 'playlists', 'playPause', 'next', 'previous', 'shuffle', 'loop', 'volumeUp', 'volumeDown']
+const HOTKEY_ACTIONS = ['settings', 'playlists', 'playPause', 'next', 'previous', 'shuffle', 'loop', 'volumeUp', 'volumeDown', 'alwaysOnTop']
 const HOTKEY_LABELS = {
   settings: 'Settings',
   playlists: 'Playlists',
@@ -730,9 +752,18 @@ const HOTKEY_LABELS = {
   loop: 'Loop',
   volumeUp: 'Vol+',
   volumeDown: 'Vol-',
+  alwaysOnTop: 'On top',
 }
 
-GetHotkeyConfig().then((cfg) => {
+// Environment() is fetched alongside the config rather than separately,
+// so the labels are already switched to the right platform's before
+// anything gets formatted - otherwise the summary would render once
+// with the wrong modifier names and then correct itself.
+Promise.all([GetHotkeyConfig(), Environment()]).then(([cfg, env]) => {
+  if (env.platform === 'darwin') {
+    modLabels = MOD_LABELS_MAC
+  }
+
   document.querySelectorAll('.hotkey-btn').forEach((button) => {
     button.textContent = formatBinding(cfg[button.dataset.action])
   })

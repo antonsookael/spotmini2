@@ -31,6 +31,7 @@ All use Ctrl+Alt on Windows and Ctrl+Option on macOS:
 | Loop            | L     |
 | Volume up       | ↑     |
 | Volume down     | ↓     |
+| Always on top   | T     |
 
 Rebinding these to different keys is currently WIP - the backend supports it, but there's no UI exposed for it yet.
 

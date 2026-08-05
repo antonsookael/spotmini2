@@ -213,6 +213,8 @@ func (a *App) hotkeyAction(action string) func() {
 		return a.VolumeUp
 	case "volumeDown":
 		return a.VolumeDown
+	case "alwaysOnTop":
+		return a.ToggleAlwaysOnTop
 	}
 	return func() {}
 }
@@ -258,6 +260,25 @@ func (a *App) ToggleSettingsPanel() {
 // same expand/collapse mechanism as ToggleSettingsPanel.
 func (a *App) TogglePlaylistsPanel() {
 	a.togglePanel("playlists")
+}
+
+// SetAlwaysOnTop floats the window above other windows, and - on macOS
+// only - above other apps' fullscreen Spaces too. The frontend calls
+// this instead of the Wails runtime's WindowSetAlwaysOnTop directly,
+// since that alone doesn't cover the fullscreen case (see
+// setFloatOverFullscreen).
+func (a *App) SetAlwaysOnTop(onTop bool) {
+	runtime.WindowSetAlwaysOnTop(a.ctx, onTop)
+	setFloatOverFullscreen(onTop)
+}
+
+// ToggleAlwaysOnTop asks the frontend to flip the always-on-top
+// setting, rather than flipping it here. The current value lives in
+// the frontend's localStorage alongside the other customization
+// toggles, so changing it in Go would leave the saved value and the
+// settings checkbox out of sync with the window's actual state.
+func (a *App) ToggleAlwaysOnTop() {
+	runtime.EventsEmit(a.ctx, "toggle-always-on-top")
 }
 
 // togglePanel shows panel (resizing/repositioning the window, same as

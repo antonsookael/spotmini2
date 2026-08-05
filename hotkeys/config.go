@@ -16,31 +16,33 @@ type HotkeyBinding struct {
 }
 
 type HotkeyConfig struct {
-	Settings   HotkeyBinding `json:"settings"`
-	Playlists  HotkeyBinding `json:"playlists"`
-	PlayPause  HotkeyBinding `json:"playPause"`
-	Next       HotkeyBinding `json:"next"`
-	Previous   HotkeyBinding `json:"previous"`
-	Shuffle    HotkeyBinding `json:"shuffle"`
-	Loop       HotkeyBinding `json:"loop"`
-	VolumeUp   HotkeyBinding `json:"volumeUp"`
-	VolumeDown HotkeyBinding `json:"volumeDown"`
+	Settings    HotkeyBinding `json:"settings"`
+	Playlists   HotkeyBinding `json:"playlists"`
+	PlayPause   HotkeyBinding `json:"playPause"`
+	Next        HotkeyBinding `json:"next"`
+	Previous    HotkeyBinding `json:"previous"`
+	Shuffle     HotkeyBinding `json:"shuffle"`
+	Loop        HotkeyBinding `json:"loop"`
+	VolumeUp    HotkeyBinding `json:"volumeUp"`
+	VolumeDown  HotkeyBinding `json:"volumeDown"`
+	AlwaysOnTop HotkeyBinding `json:"alwaysOnTop"`
 }
 
-var Actions = []string{"settings", "playlists", "playPause", "next", "previous", "shuffle", "loop", "volumeUp", "volumeDown"}
+var Actions = []string{"settings", "playlists", "playPause", "next", "previous", "shuffle", "loop", "volumeUp", "volumeDown", "alwaysOnTop"}
 
 func defaultConfig() HotkeyConfig {
 	mods := []string{"ctrl", "alt"}
 	return HotkeyConfig{
-		Settings:   HotkeyBinding{Mods: mods, Key: "c"},
-		Playlists:  HotkeyBinding{Mods: mods, Key: "p"},
-		PlayPause:  HotkeyBinding{Mods: mods, Key: "space"},
-		Next:       HotkeyBinding{Mods: mods, Key: "right"},
-		Previous:   HotkeyBinding{Mods: mods, Key: "left"},
-		Shuffle:    HotkeyBinding{Mods: mods, Key: "s"},
-		Loop:       HotkeyBinding{Mods: mods, Key: "l"},
-		VolumeUp:   HotkeyBinding{Mods: mods, Key: "up"},
-		VolumeDown: HotkeyBinding{Mods: mods, Key: "down"},
+		Settings:    HotkeyBinding{Mods: mods, Key: "c"},
+		Playlists:   HotkeyBinding{Mods: mods, Key: "p"},
+		PlayPause:   HotkeyBinding{Mods: mods, Key: "space"},
+		Next:        HotkeyBinding{Mods: mods, Key: "right"},
+		Previous:    HotkeyBinding{Mods: mods, Key: "left"},
+		Shuffle:     HotkeyBinding{Mods: mods, Key: "s"},
+		Loop:        HotkeyBinding{Mods: mods, Key: "l"},
+		VolumeUp:    HotkeyBinding{Mods: mods, Key: "up"},
+		VolumeDown:  HotkeyBinding{Mods: mods, Key: "down"},
+		AlwaysOnTop: HotkeyBinding{Mods: mods, Key: "t"},
 	}
 }
 
@@ -100,6 +102,8 @@ func (c HotkeyConfig) Binding(action string) (HotkeyBinding, bool) {
 		return c.VolumeUp, true
 	case "volumeDown":
 		return c.VolumeDown, true
+	case "alwaysOnTop":
+		return c.AlwaysOnTop, true
 	}
 	return HotkeyBinding{}, false
 }
@@ -124,6 +128,8 @@ func (c *HotkeyConfig) SetBinding(action string, b HotkeyBinding) bool {
 		c.VolumeUp = b
 	case "volumeDown":
 		c.VolumeDown = b
+	case "alwaysOnTop":
+		c.AlwaysOnTop = b
 	default:
 		return false
 	}
