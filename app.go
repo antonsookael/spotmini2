@@ -60,6 +60,10 @@ const (
 	// volumeStep is how many percentage points each volume hotkey
 	// press changes the active device's volume by.
 	volumeStep = 10
+
+	// previousRestartMs is how far into a track Previous restarts it
+	// rather than skipping to the one before.
+	previousRestartMs = 5000
 )
 
 func NewApp() *App {
@@ -490,7 +494,19 @@ func (a *App) NextTrack() {
 	a.withDeviceRevival(playback.NextTrack)
 }
 
+// PreviousTrack restarts the current track once you're past
+// previousRestartMs into it, and only skips back before that - the same
+// behaviour as Spotify's own clients. Falls back to skipping if the
+// position can't be read, since that's the pre-existing behaviour and
+// better than doing nothing.
 func (a *App) PreviousTrack() {
+	state, err := playback.NowPlaying(a.getToken())
+	if err == nil && state.ProgressMs > previousRestartMs {
+		a.withDeviceRevival(func(token string) error {
+			return playback.Seek(token, 0)
+		})
+		return
+	}
 	a.withDeviceRevival(playback.PreviousTrack)
 }
 
