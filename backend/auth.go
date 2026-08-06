@@ -3,16 +3,25 @@ package backend
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"time"
 
 	"github.com/joho/godotenv"
 
 	"spotmini-gui/paths"
 )
+
+// ErrNetwork means Spotify was never reached (DNS/connection failure),
+// as opposed to a request it actually answered and rejected. The
+// difference matters: an unreachable network is temporary and worth
+// retrying with the token we already have, while a rejected token
+// genuinely needs the user to log in again.
+var ErrNetwork = errors.New("could not reach spotify")
 
 // defaultClientID is spotmini's own Spotify app Client ID, baked in so
 // downloaded builds work without every user registering their own
@@ -123,7 +132,7 @@ func RefreshToken(refresh string) (TokenResponse, error) {
 func exchangeForToken(data url.Values) (TokenResponse, error) {
 	resp, err := http.PostForm("https://accounts.spotify.com/api/token", data)
 	if err != nil {
-		return TokenResponse{}, err
+		return TokenResponse{}, fmt.Errorf("%w: %v", ErrNetwork, err)
 	}
 	defer resp.Body.Close()
 
@@ -181,6 +190,36 @@ func loadToken() (TokenResponse, error) {
 	return token, nil
 }
 
+// refreshWhenReachable retries a refresh for as long as the only thing
+// wrong is that Spotify can't be reached, backing off up to a minute
+// between attempts. Opening the laptop with no network used to leave
+// the app permanently dead: the failed refresh was indistinguishable
+// from a rejected token, so it launched a browser login and then
+// blocked forever on a callback that could never arrive, with nothing
+// retrying once the network returned. Any answer Spotify actually
+// gives - including a genuinely invalid token - returns immediately so
+// the real login flow still runs.
+func refreshWhenReachable(refresh string) (TokenResponse, error) {
+	const maxBackoff = 60 * time.Second
+	backoff := 2 * time.Second
+
+	for {
+		token, err := RefreshToken(refresh)
+		if !errors.Is(err, ErrNetwork) {
+			return token, err
+		}
+
+		logLine("Spotify unreachable, retrying token refresh in %s", backoff)
+		time.Sleep(backoff)
+		if backoff < maxBackoff {
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+		}
+	}
+}
+
 // GetAccessTokenFull is the single entry point the app calls on startup:
 // try a saved token first, refresh if possible, otherwise fall back to a
 // full browser login and wait for the result on tokenChan. Returns the
@@ -196,7 +235,7 @@ func GetAccessTokenFull() TokenResponse {
 		logLine("Saved token has no refresh token - starting full login")
 	} else {
 		logLine("Found saved token, refreshing instead of logging in again...")
-		newToken, err := RefreshToken(saved.RefreshToken)
+		newToken, err := refreshWhenReachable(saved.RefreshToken)
 		if err == nil {
 			return newToken
 		}
