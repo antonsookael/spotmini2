@@ -4,15 +4,36 @@ on:
   push:
     tags:
       - "v*"
+  # Manual fallback: a tag push only fires the workflow once, so if that
+  # event is lost (an Actions outage, say) the tag alone won't retry and
+  # the release never builds. This re-runs it for an existing tag without
+  # having to delete and re-push.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and release (e.g. v1.8)"
+        required: true
 
 permissions:
   contents: write
+
+env:
+  # On a tag push, inputs is empty and this falls back to the pushed tag.
+  # On a manual run it's whatever tag was typed in - which matters
+  # because github.ref_name would otherwise be the branch the run was
+  # started from, naming the assets after it and publishing to the wrong
+  # place.
+  VERSION: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   build-windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Explicit, so a manual run builds the tagged commit rather
+          # than the head of whichever branch it was dispatched from.
+          ref: ${{ env.VERSION }}
 
       - uses: actions/setup-go@v5
         with:
@@ -32,11 +53,14 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          cp build/bin/spotmini.exe "dist/spotmini-${{ github.ref_name }}win.exe"
+          cp build/bin/spotmini.exe "dist/spotmini-${{ env.VERSION }}win.exe"
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
+          # Without this the action infers the tag from the ref, which is
+          # a branch on a manual run.
+          tag_name: ${{ env.VERSION }}
           files: dist/*.exe
           generate_release_notes: true
 
@@ -44,6 +68,8 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VERSION }}
 
       - uses: actions/setup-go@v5
         with:
@@ -70,10 +96,11 @@ jobs:
           # spotmini.app wrapper itself, not just its contents -
           # without it, extracting dumps a bare Contents/ folder instead
           # of a double-clickable .app bundle.
-          ditto -c -k --sequesterRsrc --keepParent build/bin/spotmini.app "dist/spotmini-${{ github.ref_name }}mac.zip"
+          ditto -c -k --sequesterRsrc --keepParent build/bin/spotmini.app "dist/spotmini-${{ env.VERSION }}mac.zip"
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.VERSION }}
           files: dist/*.zip
           generate_release_notes: true
