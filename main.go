@@ -3,41 +3,18 @@ package main
 import (
 	"embed"
 
-	"github.com/wailsapp/wails/v2"
-	"github.com/wailsapp/wails/v2/pkg/options"
-	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
-	"github.com/wailsapp/wails/v2/pkg/options/windows"
+	"spotmini-gui/internal/app"
 )
 
+// The embed directive resolves relative to this file, so it has to live
+// here at the module root rather than alongside the rest of the app
+// package - hence passing the assets in rather than reading them there.
+//
 //go:embed all:frontend/dist
 var assets embed.FS
 
 func main() {
-	app := NewApp()
-
-	err := wails.Run(&options.App{
-		Title:       "spotmini",
-		Width:       320,
-		Height:      50,
-		MinWidth:    320,
-		MinHeight:   50,
-		Frameless:   true,
-		AlwaysOnTop: true,
-		AssetServer: &assetserver.Options{
-			Assets: assets,
-		},
-		BackgroundColour: &options.RGBA{R: 18, G: 18, B: 18, A: 255},
-		OnStartup:        app.startup,
-		OnShutdown:       app.shutdown,
-		Bind: []interface{}{
-			app,
-		},
-		Windows: &windows.Options{
-			DisableFramelessWindowDecorations: true,
-		},
-	})
-
-	if err != nil {
+	if err := app.Run(assets); err != nil {
 		println("Error:", err.Error())
 	}
 }

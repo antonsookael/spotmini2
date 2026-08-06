@@ -5,7 +5,7 @@ import (
 	"os"
 	"time"
 
-	"spotmini-gui/paths"
+	"spotmini-gui/internal/paths"
 )
 
 // logFile is where auth diagnostics go, since the built app runs with

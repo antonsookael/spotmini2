@@ -1,6 +1,6 @@
 //go:build !windows && !darwin
 
-package main
+package app
 
 // No native implementation outside Windows/macOS - callers assume the
 // screen sits at the desktop origin, only true for one monitor.

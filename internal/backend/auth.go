@@ -13,7 +13,7 @@ import (
 
 	"github.com/joho/godotenv"
 
-	"spotmini-gui/paths"
+	"spotmini-gui/internal/paths"
 )
 
 // ErrNetwork means Spotify was never reached (DNS/connection failure),

@@ -7,7 +7,7 @@ import (
 
 	"golang.design/x/hotkey"
 
-	"spotmini-gui/paths"
+	"spotmini-gui/internal/paths"
 )
 
 type HotkeyBinding struct {

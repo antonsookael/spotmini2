@@ -17,7 +17,7 @@ import {
   DragWindowTo,
   BeginDrag,
   EndDrag,
-} from '../wailsjs/go/main/App'
+} from '../wailsjs/go/app/App'
 
 const trackInfoEl = document.getElementById('track-info')
 const timerEl = document.getElementById('timer')

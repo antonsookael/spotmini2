@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"encoding/json"
@@ -6,7 +6,7 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
-	"spotmini-gui/paths"
+	"spotmini-gui/internal/paths"
 )
 
 const windowPosFile = "window.json"
