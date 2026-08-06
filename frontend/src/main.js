@@ -11,6 +11,8 @@ import {
   SearchTracks,
   PlayTrack,
   SaveTrackToLiked,
+  IsAutostartEnabled,
+  SetAutostart,
   SnapWindowToEdges,
   DragWindowTo,
   BeginDrag,
@@ -434,6 +436,28 @@ WindowSetAlwaysOnTop(savedAlwaysOnTop)
 alwaysOnTopToggle.addEventListener('change', (e) => {
   localStorage.setItem('alwaysOnTop', e.target.checked)
   WindowSetAlwaysOnTop(e.target.checked)
+})
+
+// --- Customization: start on startup ---
+// Source of truth is the OS itself (registry key on Windows, LaunchAgent
+// on macOS), not localStorage - it can be changed outside the app
+// (Task Manager's Startup tab, deleting the LaunchAgent by hand), so
+// the checkbox reflects whatever's actually there rather than a cached
+// guess.
+const autostartToggle = document.getElementById('autostart-toggle')
+
+IsAutostartEnabled().then((enabled) => {
+  autostartToggle.checked = enabled
+})
+
+autostartToggle.addEventListener('change', async (e) => {
+  const enabled = e.target.checked
+  try {
+    await SetAutostart(enabled)
+  } catch (err) {
+    e.target.checked = !enabled
+    showToast('Failed to update startup setting', 2000)
+  }
 })
 
 // Flipping here rather than in Go keeps localStorage, the checkbox and
