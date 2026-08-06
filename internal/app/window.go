@@ -8,6 +8,50 @@ import (
 // edge, once the drag is released, before it snaps flush against it.
 const snapThreshold = 24
 
+// SetWindowWidth resizes the window horizontally, then pulls it back
+// on-screen if the new width ran it past a monitor edge.
+//
+// The resize itself always anchors the top-left corner and grows to the
+// right, so auto-fit widening a window that's sitting against the right
+// edge would otherwise push its tail off-screen. Re-anchoring to the
+// edge keeps a window that was flush flush, and one that wasn't fully
+// visible.
+//
+// Lives in Go rather than the frontend because only monitorBoundsAt
+// knows where the current monitor actually ends - on a multi-monitor
+// desktop the browser has no idea.
+func (a *App) SetWindowWidth(width int) {
+	oldWidth, height := runtime.WindowGetSize(a.ctx)
+	if oldWidth == width {
+		return
+	}
+	x, y := runtime.WindowGetPosition(a.ctx)
+
+	// Sampled before the resize, so the point is guaranteed to still be
+	// inside the window's current monitor.
+	centerX, centerY := x+oldWidth/2, y+height/2
+
+	runtime.WindowSetSize(a.ctx, width, height)
+
+	left, _, right, _, ok := monitorBoundsAt(centerX, centerY)
+	if !ok {
+		return
+	}
+
+	newX := x
+	if newX+width > right {
+		newX = right - width
+	}
+	// After the clamp above, in case the window is wider than the
+	// monitor - staying flush left is better than hanging off both ends.
+	if newX < left {
+		newX = left
+	}
+	if newX != x {
+		a.setAbsoluteWindowPosition(newX, y)
+	}
+}
+
 // setAbsoluteWindowPosition moves the window to an absolute desktop
 // coordinate. Windows needs compensation first (see workAreaOriginAt);
 // elsewhere it's a passthrough.

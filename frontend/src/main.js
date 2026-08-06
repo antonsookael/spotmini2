@@ -1,4 +1,4 @@
-import { EventsOn, Environment, WindowGetPosition, WindowGetSize, WindowSetSize, WindowSetAlwaysOnTop, BrowserOpenURL, Quit } from '../wailsjs/runtime/runtime'
+import { EventsOn, Environment, WindowGetPosition, WindowSetAlwaysOnTop, BrowserOpenURL, Quit } from '../wailsjs/runtime/runtime'
 import {
   GetNowPlaying,
   GetHotkeyConfig,
@@ -14,6 +14,7 @@ import {
   IsAutostartEnabled,
   SetAutostart,
   SnapWindowToEdges,
+  SetWindowWidth,
   DragWindowTo,
   BeginDrag,
   EndDrag,
@@ -85,21 +86,18 @@ function measureNeededBarWidth() {
   return needed
 }
 
-async function updateAutoWidth() {
+// Both go through Go's SetWindowWidth rather than the Wails runtime's
+// WindowSetSize: resizing anchors the top-left and grows rightward, so
+// widening near a screen edge needs the monitor bounds to stay
+// on-screen, and only Go can see those. It also no-ops when the width
+// is already right, so there's no need to check here.
+function updateAutoWidth() {
   if (!autoFitToggle.checked) return
-
-  const target = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, measureNeededBarWidth() + 8))
-  const size = await WindowGetSize()
-  if (size.w !== target) {
-    WindowSetSize(target, size.h)
-  }
+  SetWindowWidth(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, measureNeededBarWidth() + 8)))
 }
 
-async function resetWidth() {
-  const size = await WindowGetSize()
-  if (size.w !== MIN_WIDTH) {
-    WindowSetSize(MIN_WIDTH, size.h)
-  }
+function resetWidth() {
+  SetWindowWidth(MIN_WIDTH)
 }
 
 function formatTime(totalSecs) {
