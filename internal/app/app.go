@@ -55,6 +55,8 @@ type App struct {
 	dragOriginX        int
 	dragOriginY        int
 	dragOriginResolved bool
+	dragWidth          int
+	dragHeight         int
 
 	volumeMu     sync.Mutex
 	lastVolume   int

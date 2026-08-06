@@ -4,9 +4,54 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-// snapThreshold is how close (in px) the window has to be to a screen
-// edge, once the drag is released, before it snaps flush against it.
-const snapThreshold = 24
+const (
+	// snapThreshold is how close (in px) the window has to be to a screen
+	// edge, once the drag is released, before it snaps flush against it.
+	snapThreshold = 24
+
+	// minVisibleWidth is how much of the window has to stay on-screen
+	// horizontally. Some overhang is deliberate - tucking the window
+	// half off the side is a reasonable thing to want - but enough has
+	// to remain to grab it again.
+	minVisibleWidth = 80
+)
+
+// clampToScreen keeps (x, y) somewhere the window can still be grabbed:
+// at least minVisibleWidth on-screen horizontally, never above the top
+// edge, and never so far down that the bar itself is off the bottom.
+//
+// It clamps against the monitor the window is currently over rather than
+// the whole desktop, which is what lets it still be dragged between
+// monitors: monitorBoundsAt resolves to the nearest monitor, so the
+// limits hand off to the neighbouring screen as the window's centre
+// crosses onto it, and the allowed ranges overlap either side of a
+// shared edge instead of fencing the window in.
+//
+// The window is frameless, so the top edge matters more than it looks:
+// the drag handle *is* the bar, and a bar pushed above the screen top
+// can't be grabbed back.
+func clampToScreen(x, y, width, height int) (int, int) {
+	left, top, right, bottom, ok := monitorBoundsAt(x+width/2, y+height/2)
+	if !ok {
+		return x, y
+	}
+
+	if x > right-minVisibleWidth {
+		x = right - minVisibleWidth
+	}
+	if x < left-(width-minVisibleWidth) {
+		x = left - (width - minVisibleWidth)
+	}
+
+	if y > bottom-collapsedHeight {
+		y = bottom - collapsedHeight
+	}
+	if y < top {
+		y = top
+	}
+
+	return x, y
+}
 
 // SetWindowWidth resizes the window horizontally, then pulls it back
 // on-screen if the new width ran it past a monitor edge.
@@ -80,6 +125,11 @@ func (a *App) BeginDrag() {
 	a.dragActive = true
 	a.dragOriginResolved = ok
 	a.dragOriginX, a.dragOriginY = originX, originY
+	// Cached so clampToScreen doesn't need a size query every frame.
+	// Auto-fit could resize mid-drag if the song changes, leaving this
+	// slightly stale for a frame or two - only enough to shift the
+	// clamp by the width delta, which isn't worth a per-frame query.
+	a.dragWidth, a.dragHeight = width, height
 	a.dragMu.Unlock()
 }
 
@@ -100,12 +150,20 @@ func (a *App) DragWindowTo(x, y int) {
 	active := a.dragActive
 	resolved := a.dragOriginResolved
 	originX, originY := a.dragOriginX, a.dragOriginY
+	width, height := a.dragWidth, a.dragHeight
 	a.dragMu.Unlock()
 
 	if !active {
 		a.setAbsoluteWindowPosition(x, y)
 		return
 	}
+
+	// Clamped per frame rather than only on release, so the window
+	// stops at the boundary as you drag instead of snapping back
+	// afterwards. The target is recomputed from the pointer each frame,
+	// so dragging back inwards picks the window up again straight away.
+	x, y = clampToScreen(x, y, width, height)
+
 	if !resolved {
 		runtime.WindowSetPosition(a.ctx, x, y)
 		return

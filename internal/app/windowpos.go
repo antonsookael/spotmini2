@@ -52,6 +52,12 @@ func (a *App) restoreWindowPosition() {
 		return
 	}
 
-	a.setAbsoluteWindowPosition(pos.X, pos.Y)
-	a.snapToEdges(pos.X, pos.Y)
+	// A saved position can point somewhere that no longer exists - a
+	// monitor that's since been unplugged, or a rearranged desktop -
+	// which would restore the window off-screen with no way to reach it.
+	width, height := runtime.WindowGetSize(a.ctx)
+	x, y := clampToScreen(pos.X, pos.Y, width, height)
+
+	a.setAbsoluteWindowPosition(x, y)
+	a.snapToEdges(x, y)
 }
