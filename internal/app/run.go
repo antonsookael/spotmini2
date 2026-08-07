@@ -23,7 +23,7 @@ func Run(assets embed.FS) error {
 		Title:       "spotmini",
 		Width:       windowWidth,
 		Height:      collapsedHeight,
-		MinWidth:    windowWidth,
+		MinWidth:    minWindowWidth,
 		MinHeight:   collapsedHeight,
 		Frameless:   true,
 		AlwaysOnTop: true,

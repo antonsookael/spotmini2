@@ -19,7 +19,17 @@ import (
 )
 
 const (
-	windowWidth     = 320
+	// Wide enough for a typical "Song - Artist" alongside the timer and
+	// the five icons/buttons, which together take ~250px - at the old
+	// 320 that left ~70px for the title, so almost anything ellipsized.
+	// 440 fits most titles; past ~460 the extra width stops buying any.
+	windowWidth = 440
+
+	// The floor the OS enforces. Well below windowWidth so auto-fit can
+	// shrink past the default when there's little to show - "Nothing
+	// playing" hides the timer and icons and needs far less room.
+	minWindowWidth = 150
+
 	collapsedHeight = 50
 	expandedHeight  = 355
 )

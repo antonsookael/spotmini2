@@ -49,7 +49,17 @@ trackInfoEl.addEventListener('click', () => {
 // --- Customization: auto-fit window width ---
 // Off by default (titles just ellipsize). On, the window widens to fit
 // the track name and artist, up to MAX_WIDTH.
-const MIN_WIDTH = 320
+// DEFAULT_WIDTH matches windowWidth in internal/app/app.go: the width
+// the window starts at and returns to when auto-fit is switched off.
+//
+// Auto-fit itself is free to go below it, down to AUTOFIT_MIN_WIDTH -
+// with nothing playing the bar is just "Nothing playing" and the
+// buttons, so holding it at the full default would leave a wide, mostly
+// empty bar. AUTOFIT_MIN_WIDTH only guards against a degenerate sliver;
+// the measured content width is normally what wins. Keep it at or above
+// minWindowWidth in app.go, which the OS enforces.
+const DEFAULT_WIDTH = 440
+const AUTOFIT_MIN_WIDTH = 150
 const MAX_WIDTH = 640
 
 const autoFitToggle = document.getElementById('auto-fit-toggle')
@@ -93,11 +103,11 @@ function measureNeededBarWidth() {
 // is already right, so there's no need to check here.
 function updateAutoWidth() {
   if (!autoFitToggle.checked) return
-  SetWindowWidth(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, measureNeededBarWidth() + 8)))
+  SetWindowWidth(Math.min(MAX_WIDTH, Math.max(AUTOFIT_MIN_WIDTH, measureNeededBarWidth() + 8)))
 }
 
 function resetWidth() {
-  SetWindowWidth(MIN_WIDTH)
+  SetWindowWidth(DEFAULT_WIDTH)
 }
 
 function formatTime(totalSecs) {
