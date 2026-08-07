@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>spotmini</title>
+    <meta name="description" content="A tiny, always-on-top Spotify now-playing bar for macOS and Windows." />
+    <link rel="icon" href="./icon.png" />
+    <style>
+      @font-face {
+        font-family: "Nunito";
+        src: url("./nunito.woff2") format("woff2");
+        font-weight: 400;
+        font-display: swap;
+      }
+
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+
+      :root {
+        --accent: #1db954;
+        --bg: #121212;
+        --fg: #e0e0e0;
+        --muted: #757575;
+        --line: #282828;
+      }
+
+      body {
+        background: var(--bg);
+        color: var(--fg);
+        font-family: "Nunito", -apple-system, "Segoe UI", sans-serif;
+        font-size: 14px;
+        line-height: 1.55;
+        display: flex;
+        justify-content: center;
+        padding: 56px 20px 72px;
+      }
+
+      main { width: 100%; max-width: 460px; }
+
+      /* --- Header --- */
+      header { display: flex; align-items: center; gap: 12px; }
+      header img { width: 44px; height: 44px; border-radius: 10px; }
+      h1 { font-size: 22px; font-weight: 400; letter-spacing: -0.2px; }
+      .tagline { color: var(--muted); font-size: 13px; margin-top: 2px; }
+
+      /* --- The real app bar, rebuilt 1:1 from frontend/index.html so
+         the preview stays honest: same 50px height, 16px type, icon
+         order and muted/accent colours as the running window. --- */
+      .preview-wrap { margin: 26px 0; }
+      .preview {
+        /* The app's real default width, so the preview is actual size
+           rather than a stretched approximation. */
+        width: 440px;
+        max-width: 100%;
+        margin: 0 auto;
+        height: 50px;
+        display: flex;
+        align-items: center;
+        padding: 0 12px;
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        color: var(--fg);
+        font-size: 16px;
+        white-space: nowrap;
+        overflow: hidden;
+        user-select: none;
+      }
+      .preview .dot {
+        width: 8px; height: 8px; border-radius: 50%;
+        background: var(--accent); margin-right: 10px; flex-shrink: 0;
+        animation: pulse 1.6s ease-in-out infinite;
+      }
+      @keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.35 } }
+      .preview .track { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+      .preview .time { flex-shrink: 0; margin-left: 12px; color: var(--accent); }
+      .preview .icon {
+        flex-shrink: 0; margin-left: 8px;
+        display: inline-flex; align-items: center;
+        position: relative; color: var(--muted);
+      }
+      .preview .icon.active { color: var(--accent); }
+      .preview .badge {
+        position: absolute; right: -3px; bottom: -2px;
+        font-size: 8px; font-weight: 700; line-height: 1;
+        color: var(--accent);
+      }
+      .preview .btn-mini {
+        flex-shrink: 0; margin-left: 8px;
+        width: 22px; height: 22px;
+        display: inline-flex; align-items: center; justify-content: center;
+        color: var(--muted);
+      }
+      .preview-label {
+        margin-top: 6px;
+        font-size: 11px;
+        color: var(--muted);
+        text-align: center;
+        letter-spacing: 0.3px;
+      }
+
+      /* --- Download --- */
+      .btn {
+        display: block;
+        width: 100%;
+        padding: 11px 16px;
+        border: none;
+        border-radius: 6px;
+        background: var(--accent);
+        color: #0a0a0a;
+        font: inherit;
+        font-weight: 700;
+        text-align: center;
+        text-decoration: none;
+        cursor: pointer;
+      }
+      .btn:hover { filter: brightness(1.08); }
+      .alt {
+        margin-top: 8px;
+        text-align: center;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .alt a { color: var(--muted); }
+      .alt a:hover { color: var(--accent); }
+      .version { text-align: center; font-size: 12px; color: var(--muted); margin-top: 10px; }
+
+      /* --- Sections --- */
+      section { margin-top: 34px; }
+      h2 {
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.7px;
+        color: var(--accent);
+        margin-bottom: 10px;
+      }
+      ul { list-style: none; }
+      li { padding: 3px 0; color: var(--fg); }
+      li::before { content: "·"; color: var(--muted); margin-right: 8px; }
+
+      ol { margin-left: 16px; }
+      ol li { padding: 4px 0; }
+      ol li::before { content: none; }
+
+      code {
+        display: block;
+        margin: 6px 0;
+        padding: 8px 10px;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.03);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+        color: var(--fg);
+        overflow-x: auto;
+      }
+
+      /* Only the block for the visitor's OS is shown by default. */
+      .os-block { display: none; }
+      .os-block.show { display: block; }
+      .os-toggle {
+        margin-top: 10px;
+        font-size: 12px;
+        color: var(--muted);
+        background: none;
+        border: none;
+        padding: 0;
+        font-family: inherit;
+        cursor: pointer;
+        text-decoration: underline;
+      }
+      .os-toggle:hover { color: var(--accent); }
+
+      .note { color: var(--muted); font-size: 12px; margin-top: 8px; }
+
+      footer {
+        margin-top: 40px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+        font-size: 12px;
+        color: var(--muted);
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      footer a { color: var(--muted); }
+      footer a:hover { color: var(--accent); }
+      a { color: var(--accent); }
+    </style>
+  </head>
+
+  <body>
+    <main>
+      <header>
+        <img src="./icon.png" alt="" />
+        <div>
+          <h1>spotmini</h1>
+          <div class="tagline">A tiny, always-on-top Spotify bar.</div>
+        </div>
+      </header>
+
+      <div class="preview-wrap">
+        <div class="preview">
+          <span class="dot"></span>
+          <span class="track">Nangs - Tame Impala</span>
+          <span class="time">0:15/1:47</span>
+
+          <span class="icon active" title="Shuffle">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="16 3 21 3 21 8"></polyline>
+              <line x1="4" y1="20" x2="21" y2="3"></line>
+              <polyline points="21 16 21 21 16 21"></polyline>
+              <line x1="15" y1="15" x2="21" y2="21"></line>
+              <line x1="4" y1="4" x2="9" y2="9"></line>
+            </svg>
+          </span>
+
+          <span class="icon" title="Loop">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="17 1 21 5 17 9"></polyline>
+              <path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
+              <polyline points="7 23 3 19 7 15"></polyline>
+              <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
+            </svg>
+          </span>
+
+          <span class="btn-mini">&#9835;</span>
+          <span class="btn-mini">&#9881;</span>
+          <span class="btn-mini">&#10005;</span>
+        </div>
+        <div class="preview-label">preview</div>
+      </div>
+
+      <a class="btn" id="download" href="https://github.com/antonsookael/spotmini2/releases/latest">Download</a>
+      <div class="alt" id="alt"></div>
+      <div class="version" id="version"></div>
+
+      <section>
+        <h2>What it does</h2>
+        <ul>
+          <li>Shows the current song, artist and progress</li>
+          <li>Play, skip, shuffle, loop and volume — all on global hotkeys</li>
+          <li>Playlist picker with search, and song search</li>
+          <li>Custom colours, edge snapping, auto-fit width</li>
+          <li>Works with whatever device you're playing on, phone included</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Setup</h2>
+
+        <div class="os-block" id="mac">
+          <p>The app isn't signed with a paid Apple certificate, so macOS blocks it on first open. To get past that:</p>
+          <ol>
+            <li>Unzip it and move <strong>spotmini.app</strong> to Applications.</li>
+            <li>Remove the quarantine flag macOS attached on download:
+              <code>xattr -cr /Applications/spotmini.app</code>
+            </li>
+            <li>Open it normally.</li>
+            <li>For the hotkeys, allow it under <strong>System Settings → Privacy &amp; Security → Accessibility</strong>, then quit and reopen.</li>
+          </ol>
+          <p class="note">Steps 2 and 4 need repeating on each update — unsigned builds are tied to the exact binary.</p>
+        </div>
+
+        <div class="os-block" id="win">
+          <p>The app isn't code-signed, so Windows shows a publisher warning on first run. Click <strong>More info → Run anyway</strong>.</p>
+          <p class="note">Defender may also flag it as a false positive; if so, allow it under Virus &amp; threat protection → Protection history.</p>
+        </div>
+
+        <button class="os-toggle" id="toggle"></button>
+      </section>
+
+      <section>
+        <h2>Requirements</h2>
+        <ul>
+          <li>A Spotify account — Premium for playback control</li>
+          <li>Log in once; it stays signed in after that</li>
+        </ul>
+      </section>
+
+      <footer>
+        <span>Free and open source</span>
+        <a href="https://github.com/antonsookael/spotmini2">GitHub</a>
+      </footer>
+    </main>
+
+    <script>
+      const REPO = 'antonsookael/spotmini2'
+      const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
+
+      const macBlock = document.getElementById('mac')
+      const winBlock = document.getElementById('win')
+      const toggle = document.getElementById('toggle')
+
+      let showingMac = isMac
+      function applyOS() {
+        macBlock.classList.toggle('show', showingMac)
+        winBlock.classList.toggle('show', !showingMac)
+        toggle.textContent = showingMac ? 'Using Windows?' : 'Using macOS?'
+      }
+      toggle.addEventListener('click', () => { showingMac = !showingMac; applyOS() })
+      applyOS()
+
+      // Asset names carry the version (spotmini-v1.8mac.zip), so there's
+      // no fixed URL for "latest" - the release has to be looked up. The
+      // button already links to the releases page, so if this fails the
+      // page still works, just without the direct link.
+      fetch(`https://api.github.com/repos/${REPO}/releases/latest`)
+        .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+        .then((release) => {
+          const find = (suffix) =>
+            (release.assets || []).find((a) => a.name.endsWith(suffix))
+          const mac = find('mac.zip')
+          const win = find('win.exe')
+          const mine = isMac ? mac : win
+          const other = isMac ? win : mac
+
+          if (mine) {
+            const btn = document.getElementById('download')
+            btn.href = mine.browser_download_url
+            btn.textContent = `Download for ${isMac ? 'macOS' : 'Windows'}`
+          }
+          if (other) {
+            document.getElementById('alt').innerHTML =
+              `<a href="${other.browser_download_url}">Download for ${isMac ? 'Windows' : 'macOS'}</a>`
+          }
+          if (release.tag_name) {
+            document.getElementById('version').textContent = release.tag_name
+          }
+        })
+        .catch(() => {})
+    </script>
+  </body>
+</html>
