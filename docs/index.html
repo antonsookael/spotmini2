@@ -174,6 +174,18 @@
 
       .note { color: var(--muted); font-size: 12px; margin-top: 8px; }
 
+      .feedback-intro { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+      .links { display: flex; gap: 8px; flex-wrap: wrap; }
+      .links a {
+        padding: 7px 14px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        color: var(--fg);
+        font-size: 13px;
+        text-decoration: none;
+      }
+      .links a:hover { border-color: var(--accent); color: var(--accent); }
+
       footer {
         margin-top: 40px;
         padding-top: 16px;
@@ -277,6 +289,17 @@
           <li>A Spotify account — Premium for playback control</li>
           <li>Log in once; it stays signed in after that</li>
         </ul>
+      </section>
+
+      <section>
+        <h2>Feedback</h2>
+        <p class="feedback-intro">Both go through GitHub, so you'll need an account to post.</p>
+        <div class="links">
+          <!-- Discussions is the open-ended half; the bug link preselects
+               the bug label and opens a blank issue. -->
+          <a href="https://github.com/antonsookael/spotmini2/discussions">Share feedback</a>
+          <a href="https://github.com/antonsookael/spotmini2/issues/new?labels=bug">Report a bug</a>
+        </div>
       </section>
 
       <footer>
