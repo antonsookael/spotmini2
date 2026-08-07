@@ -47,7 +47,9 @@ jobs:
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
       - name: Build
-        run: wails build
+        # -ldflags stamps the tag into the binary so the settings panel
+        # can show it (see internal/app/version.go).
+        run: wails build -ldflags "-X spotmini-gui/internal/app.Version=${{ env.VERSION }}"
 
       - name: Package binary
         shell: bash
@@ -87,7 +89,7 @@ jobs:
         # actual architecture - without forcing a universal binary, this
         # produces an Intel-only build that fails with "bad CPU type in
         # executable" on Apple Silicon Macs without Rosetta.
-        run: wails build -platform darwin/universal
+        run: wails build -platform darwin/universal -ldflags "-X spotmini-gui/internal/app.Version=${{ env.VERSION }}"
 
       - name: Package binary
         run: |

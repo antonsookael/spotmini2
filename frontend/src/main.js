@@ -13,6 +13,7 @@ import {
   SaveTrackToLiked,
   IsAutostartEnabled,
   SetAutostart,
+  GetVersion,
   SnapWindowToEdges,
   SetWindowWidth,
   DragWindowTo,
@@ -780,4 +781,10 @@ Promise.all([GetHotkeyConfig(), Environment()]).then(([cfg, env]) => {
       (action) => `${HOTKEY_LABELS[action]} ${formatBinding(cfg[action])}`
     ).join(' · ')
   }
+})
+
+// Stamped in at build time (see internal/app/version.go); reads "dev"
+// for local builds.
+GetVersion().then((v) => {
+  document.getElementById('app-version').textContent = `spotmini ${v}`
 })

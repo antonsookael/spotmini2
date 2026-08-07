@@ -408,6 +408,12 @@ body {
   opacity: 0.6;
 }
 
+#app-version {
+  margin-top: 8px;
+  font-size: 10px;
+  color: #757575;
+}
+
 .hotkey-btn {
   min-width: 90px;
   padding: 4px 8px;
