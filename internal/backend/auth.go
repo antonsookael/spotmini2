@@ -142,7 +142,15 @@ func startLogin() {
 	server := &http.Server{Addr: "127.0.0.1:8888", Handler: mux}
 
 	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
-		callbackHandler(w, r)
+		// Only a request that ended the flow takes the server down with
+		// it. Anything else - a stray hit on this URL, a browser
+		// prefetch, an old callback tab reloading with a previous
+		// login's state - has to leave it listening, or the redirect
+		// we're actually waiting for arrives at a closed port and
+		// GetAccessTokenFull blocks on a result nothing will ever send.
+		if !callbackHandler(w, r) {
+			return
+		}
 
 		// Give the browser a moment to receive the response before we
 		// shut the server down out from under it.

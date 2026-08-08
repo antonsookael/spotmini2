@@ -13,7 +13,14 @@ import (
 // the redirect we're waiting for" case ends in a reportLogin call -
 // GetAccessTokenFull is blocked until one arrives, so a path that just
 // returns leaves the app permanently half-started.
-func callbackHandler(w http.ResponseWriter, r *http.Request) {
+//
+// The bool says which of those two happened: true once an outcome has
+// been reported and the flow is over, false for a request that wasn't
+// our redirect. The caller shuts the callback server down on true only
+// - tearing it down on a request we deliberately didn't report would
+// strand the login just as thoroughly, since the redirect we're still
+// waiting for would then have nothing left to arrive at.
+func callbackHandler(w http.ResponseWriter, r *http.Request) bool {
 	// Checked before anything else, including the error case, since
 	// Spotify echoes state back on both. A mismatch means this request
 	// didn't come from the login we started, so it's refused *without*
@@ -22,7 +29,7 @@ func callbackHandler(w http.ResponseWriter, r *http.Request) {
 	if state := r.URL.Query().Get("state"); loginState == "" || state != loginState {
 		logging.Printf("Ignoring callback with unexpected state")
 		fmt.Fprintln(w, "That link didn't come from this app.")
-		return
+		return false
 	}
 
 	// Spotify redirects here with ?error=access_denied and no code at
@@ -32,7 +39,7 @@ func callbackHandler(w http.ResponseWriter, r *http.Request) {
 		logging.Printf("Spotify login refused: %s", reason)
 		fmt.Fprintln(w, "Login was cancelled. You can close this tab.")
 		reportLogin(loginResult{err: fmt.Errorf("spotify login refused: %s", reason)})
-		return
+		return true
 	}
 
 	code := r.URL.Query().Get("code")
@@ -42,7 +49,7 @@ func callbackHandler(w http.ResponseWriter, r *http.Request) {
 		// diagnosable. Left for the real callback rather than reported,
 		// on the same reasoning as the state mismatch above.
 		fmt.Fprintln(w, "Waiting for the Spotify login to complete...")
-		return
+		return false
 	}
 
 	data := url.Values{}
@@ -57,7 +64,7 @@ func callbackHandler(w http.ResponseWriter, r *http.Request) {
 		logging.Printf("Token exchange failed: %v", err)
 		fmt.Fprintln(w, "Something went wrong finishing the login - check the log and try again.")
 		reportLogin(loginResult{err: fmt.Errorf("exchanging code for token: %w", err)})
-		return
+		return true
 	}
 
 	saveToken(token)
@@ -66,4 +73,5 @@ func callbackHandler(w http.ResponseWriter, r *http.Request) {
 	// Hand the token back to GetAccessTokenFull, which is waiting on the
 	// other end of this channel.
 	reportLogin(loginResult{token: token})
+	return true
 }
