@@ -7,7 +7,6 @@ package app
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 
 	"spotmini-gui/internal/backend"
 	"spotmini-gui/internal/hotkeys"
+	"spotmini-gui/internal/logging"
 )
 
 const (
@@ -108,7 +108,10 @@ func (a *App) startup(ctx context.Context) {
 	for _, action := range hotkeys.Actions {
 		binding, _ := a.hotkeyConfig.Binding(action)
 		if err := a.applyHotkey(action, binding); err != nil {
-			fmt.Printf("Failed to register %s hotkey: %v\n", action, err)
+			// Worth recording: the usual cause is another app - or a
+			// leftover copy of this one - already holding the combo,
+			// which is otherwise indistinguishable from a dead hotkey.
+			logging.Printf("Failed to register %s hotkey: %v", action, err)
 		}
 	}
 }

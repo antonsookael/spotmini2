@@ -13,6 +13,7 @@ import (
 
 	"github.com/joho/godotenv"
 
+	"spotmini-gui/internal/logging"
 	"spotmini-gui/internal/paths"
 )
 
@@ -161,16 +162,16 @@ func exchangeForToken(data url.Values) (TokenResponse, error) {
 func saveToken(token TokenResponse) {
 	data, err := json.MarshalIndent(token, "", "  ")
 	if err != nil {
-		logLine("Error saving token: %v", err)
+		logging.Printf("Error saving token: %v", err)
 		return
 	}
 	path, err := paths.ConfigFile(tokenFile)
 	if err != nil {
-		logLine("Error resolving token file path: %v", err)
+		logging.Printf("Error resolving token file path: %v", err)
 		return
 	}
 	if err := os.WriteFile(path, data, 0644); err != nil {
-		logLine("Error writing token file: %v", err)
+		logging.Printf("Error writing token file: %v", err)
 	}
 }
 
@@ -209,7 +210,7 @@ func refreshWhenReachable(refresh string) (TokenResponse, error) {
 			return token, err
 		}
 
-		logLine("Spotify unreachable, retrying token refresh in %s", backoff)
+		logging.Printf("Spotify unreachable, retrying token refresh in %s", backoff)
 		time.Sleep(backoff)
 		if backoff < maxBackoff {
 			backoff *= 2
@@ -230,16 +231,16 @@ func GetAccessTokenFull() TokenResponse {
 
 	saved, err := loadToken()
 	if err != nil {
-		logLine("No saved token found (%v) - starting full login", err)
+		logging.Printf("No saved token found (%v) - starting full login", err)
 	} else if saved.RefreshToken == "" {
-		logLine("Saved token has no refresh token - starting full login")
+		logging.Printf("Saved token has no refresh token - starting full login")
 	} else {
-		logLine("Found saved token, refreshing instead of logging in again...")
+		logging.Printf("Found saved token, refreshing instead of logging in again...")
 		newToken, err := refreshWhenReachable(saved.RefreshToken)
 		if err == nil {
 			return newToken
 		}
-		logLine("Refresh failed, falling back to full login: %v", err)
+		logging.Printf("Refresh failed, falling back to full login: %v", err)
 	}
 
 	go startLogin()

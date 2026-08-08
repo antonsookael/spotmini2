@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"spotmini-gui/internal/logging"
 )
 
 // apiPrefix is trimmed off logged URLs - it's on every one of them, and
@@ -30,6 +32,11 @@ var ErrPremiumRequired = errors.New("spotify premium required")
 // callers can tell that failure apart from any other kind and react to
 // it (reviving a device and retrying) instead of just logging it.
 func doPlayerRequest(method, url, accessToken string, body io.Reader) error {
+	// The endpoint is what identifies the command - a bare status and
+	// body gives no clue whether it was a skip, a volume change or a
+	// device transfer that produced it.
+	action := method + " " + strings.TrimPrefix(url, apiPrefix)
+
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return err
@@ -42,25 +49,31 @@ func doPlayerRequest(method, url, accessToken string, body io.Reader) error {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
+		// Never reached Spotify at all - worth recording, since from the
+		// user's side it looks identical to a command being ignored.
+		logging.Printf("[spotify] %s -> %v", action, err)
 		return err
 	}
 	defer resp.Body.Close()
 
 	respBody, _ := io.ReadAll(resp.Body)
 
-	// The endpoint is what identifies the command - a bare status and
-	// body gives no clue whether it was a skip, a volume change or a
-	// device transfer that produced it.
-	action := method + " " + strings.TrimPrefix(url, apiPrefix)
+	line := fmt.Sprintf("[spotify] %s -> %d", action, resp.StatusCode)
 	if len(respBody) > 0 {
-		fmt.Printf("[spotify] %s -> %d %s\n", action, resp.StatusCode, respBody)
-	} else {
-		fmt.Printf("[spotify] %s -> %d\n", action, resp.StatusCode)
+		line += " " + string(respBody)
 	}
 
+	// Successes stay on stdout only. They're the routine case and would
+	// bulk up a log file that's meant to be read after something went
+	// wrong - but they're still worth seeing live under `wails dev`.
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		fmt.Println(line)
 		return nil
 	}
+
+	// %s rather than passing line as the format: a response body can
+	// contain a stray % that would otherwise be read as a verb.
+	logging.Printf("%s", line)
 
 	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusForbidden {
 		var parsed struct {

@@ -2,11 +2,11 @@ package app
 
 import (
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"spotmini-gui/internal/logging"
 	"spotmini-gui/internal/playback"
 )
 
@@ -119,7 +119,7 @@ func (a *App) withDeviceRevival(action func(token string) error) error {
 			if err == nil || errors.Is(err, playback.ErrPremiumRequired) {
 				break
 			}
-			fmt.Println("Retrying after device revival:", err)
+			logging.Printf("Retrying after device revival: %v", err)
 		}
 	}
 	if errors.Is(err, playback.ErrPremiumRequired) {

@@ -1,9 +1,9 @@
 package app
 
 import (
-	"fmt"
 	"strings"
 
+	"spotmini-gui/internal/logging"
 	"spotmini-gui/internal/playback"
 )
 
@@ -35,7 +35,7 @@ func (a *App) PlayLikedSongs() {
 	token := a.getToken()
 	uris, err := playback.GetLikedSongURIs(token)
 	if err != nil {
-		fmt.Println("Failed to fetch liked songs:", err)
+		logging.Printf("Failed to fetch liked songs: %v", err)
 		return
 	}
 	if len(uris) == 0 {
@@ -54,7 +54,7 @@ func (a *App) SearchTracks(query string) []playback.TrackResult {
 	}
 	results, err := playback.SearchTracks(a.getToken(), query, searchResultLimit)
 	if err != nil {
-		fmt.Println("Track search failed:", err)
+		logging.Printf("Track search failed: %v", err)
 		return nil
 	}
 	return results
@@ -71,6 +71,6 @@ func (a *App) PlayTrack(uri string) {
 // SaveTrackToLiked adds a track to the current user's Liked Songs.
 func (a *App) SaveTrackToLiked(id string) {
 	if err := playback.SaveTrack(a.getToken(), id); err != nil {
-		fmt.Println("Failed to save track:", err)
+		logging.Printf("Failed to save track: %v", err)
 	}
 }

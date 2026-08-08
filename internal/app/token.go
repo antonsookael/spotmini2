@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"spotmini-gui/internal/backend"
+	"spotmini-gui/internal/logging"
 )
 
 // Refresh this far before the real expiry, so a call landing right on
@@ -37,7 +38,7 @@ func (a *App) getToken() string {
 
 	newToken, err := backend.RefreshToken(a.refreshTok)
 	if err != nil {
-		fmt.Println("On-demand token refresh failed:", err)
+		logging.Printf("On-demand token refresh failed: %v", err)
 		return a.accessToken
 	}
 
@@ -79,7 +80,7 @@ func (a *App) startTokenRefreshLoop() {
 
 		newToken, err := backend.RefreshToken(refresh)
 		if err != nil {
-			fmt.Println("Background token refresh failed:", err)
+			logging.Printf("Background token refresh failed: %v", err)
 			continue
 		}
 
