@@ -64,8 +64,32 @@ func (a *App) checkForUpdate() {
 		return
 	}
 
+	info := UpdateInfo{Version: latest, URL: releasePageURL}
+
+	// Stored before it's emitted, so a frontend that asks the moment it
+	// loads can't catch this half-done.
+	a.updateMu.Lock()
+	a.updateInfo = &info
+	a.updateMu.Unlock()
+
 	fmt.Printf("[update] %s is available (running %s)\n", latest, Version)
-	runtime.EventsEmit(a.ctx, "update-available", UpdateInfo{Version: latest, URL: releasePageURL})
+	runtime.EventsEmit(a.ctx, "update-available", info)
+}
+
+// GetUpdateInfo returns the newer release found at startup, or nil if
+// there is none, the check hasn't finished, or it failed.
+//
+// The frontend asks for this as well as listening for
+// "update-available", because the event alone isn't reliable: the check
+// is kicked off from startup, before the webview has loaded, and Wails
+// delivers events by evaluating script against the page as it is right
+// then rather than queuing them. One that fires early reaches no
+// listeners and is simply gone. Between the two paths, whichever
+// arrives second finds the value already set and changes nothing.
+func (a *App) GetUpdateInfo() *UpdateInfo {
+	a.updateMu.Lock()
+	defer a.updateMu.Unlock()
+	return a.updateInfo
 }
 
 func fetchLatestVersion() (string, error) {

@@ -77,6 +77,12 @@ type App struct {
 	volumeMu     sync.Mutex
 	lastVolume   int
 	lastVolumeAt time.Time
+
+	// Written once by checkForUpdate, read by GetUpdateInfo. Kept rather
+	// than only announced: the check runs before the window exists, so
+	// the event announcing it can land before anything is listening.
+	updateMu   sync.Mutex
+	updateInfo *UpdateInfo
 }
 
 // New returns an App ready to be handed to Wails. Everything that needs

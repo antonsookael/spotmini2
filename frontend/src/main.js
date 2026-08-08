@@ -16,6 +16,7 @@ import {
   IsAutostartEnabled,
   SetAutostart,
   GetVersion,
+  GetUpdateInfo,
   OpenReleasePage,
   SnapWindowToEdges,
   SetWindowWidth,
@@ -985,21 +986,49 @@ document.getElementById('hotkeys-back-btn').addEventListener('click', () => {
 // for local builds.
 const versionEl = document.getElementById('app-version')
 let runningVersion = ''
+let availableUpdate = null
 
-GetVersion().then((v) => {
-  runningVersion = v
-  versionEl.textContent = `spotmini ${v}`
-})
-
-// Emitted at startup only when GitHub's latest release is newer than
-// this build - so arriving at all means there's something to say.
+// The two halves of this line arrive independently - the running version
+// from a local call, the update from a GitHub round trip - so it's
+// rendered from whatever is known so far rather than assembled by
+// whichever one happens to land second. Interpolating the version inside
+// the update handler printed a blank one whenever the update won.
 //
 // The version line is the notice's permanent home rather than a bar
 // message: the bar is transient by design, and an update that scrolled
 // past while the user was looking elsewhere may as well not have been
 // mentioned. The line stays until they act on it.
-EventsOn('update-available', (update) => {
-  versionEl.textContent = `spotmini ${runningVersion} — ${update.version} available`
-  versionEl.classList.add('update-available')
-  versionEl.addEventListener('click', OpenReleasePage)
+function renderVersionLine() {
+  if (!runningVersion) return
+  versionEl.textContent = availableUpdate
+    ? `spotmini ${runningVersion} — ${availableUpdate.version} available`
+    : `spotmini ${runningVersion}`
+  versionEl.classList.toggle('update-available', !!availableUpdate)
+}
+
+// Attached once, up front, rather than when an update turns up - so it
+// can't be added twice and there's nothing to tear down if it never is.
+versionEl.addEventListener('click', () => {
+  if (availableUpdate) OpenReleasePage()
+})
+
+function setAvailableUpdate(update) {
+  if (!update) return
+  availableUpdate = update
+  renderVersionLine()
+}
+
+// Subscribed before the value is asked for, deliberately: an update
+// found between the two would slip through the gap the other way round.
+EventsOn('update-available', setAvailableUpdate)
+
+// Asked for as well as listened for. The check starts before this window
+// exists, so an update found quickly is emitted with nothing listening
+// and lost - this covers that case, and the event covers a check that
+// finishes after the window is up. See GetUpdateInfo in update.go.
+GetUpdateInfo().then(setAvailableUpdate)
+
+GetVersion().then((v) => {
+  runningVersion = v
+  renderVersionLine()
 })
