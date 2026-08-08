@@ -32,13 +32,12 @@ const (
 
 	collapsedHeight = 50
 
-	// Shared by every panel, so it's sized against the tallest - the
-	// settings panel at windowWidth with the gradient picker showing.
-	// The hotkeys panel is shorter and simply leaves the slack empty.
-	// A narrower window (auto-fit can shrink it) wraps content onto more
-	// lines than this covers; panels scroll in that case rather than
-	// growing, since the height can't track the width.
-	expandedHeight = 375
+	// Only the height a panel opens at before the frontend measures it
+	// and calls SetPanelHeight with the real figure. Roughly the common
+	// case, so the correction is usually invisible - panels size
+	// themselves from here on, and this never needs bumping when a row
+	// is added.
+	defaultExpandedHeight = 375
 )
 
 // App holds the shared state behind every frontend-callable method.

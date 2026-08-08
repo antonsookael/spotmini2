@@ -17,6 +17,7 @@ import {
   GetVersion,
   SnapWindowToEdges,
   SetWindowWidth,
+  SetPanelHeight,
   DragWindowTo,
   BeginDrag,
   EndDrag,
@@ -57,11 +58,15 @@ trackInfoEl.addEventListener('click', () => {
 // Auto-fit itself is free to go below it, down to AUTOFIT_MIN_WIDTH -
 // with nothing playing the bar is just "Nothing playing" and the
 // buttons, so holding it at the full default would leave a wide, mostly
-// empty bar. AUTOFIT_MIN_WIDTH only guards against a degenerate sliver;
-// the measured content width is normally what wins. Keep it at or above
-// minWindowWidth in app.go, which the OS enforces.
+// empty bar.
+//
+// AUTOFIT_MIN_WIDTH is above what that idle bar actually measures
+// (~245px), so it's the floor rather than the content that decides how
+// narrow things get - shrink-wrapping it exactly left the window
+// looking cramped. Keep it at or above minWindowWidth in app.go, which
+// the OS enforces.
 const DEFAULT_WIDTH = 440
-const AUTOFIT_MIN_WIDTH = 150
+const AUTOFIT_MIN_WIDTH = 300
 const MAX_WIDTH = 640
 
 const autoFitToggle = document.getElementById('auto-fit-toggle')
@@ -302,7 +307,49 @@ EventsOn('panel-changed', (panel) => {
   if (panel === 'playlists') {
     openPlaylistsPanel()
   }
+  updatePanelHeight()
 })
+
+// The window is only ever as tall as the open panel needs, so adding a
+// row doesn't mean hand-tuning a height in Go to match. Capped because
+// the playlist list has no natural end - past this it scrolls instead
+// of growing the window.
+const PANEL_MAX_HEIGHT = 340
+
+function updatePanelHeight() {
+  const panel = document.querySelector(
+    '#settings-panel:not(.hidden), #playlists-panel:not(.hidden), #hotkeys-panel:not(.hidden)'
+  )
+  if (!panel) return
+
+  // Playlists is fixed rather than measured. Its list loads
+  // asynchronously, so measuring on open catches it empty - and even
+  // once loaded, sizing to it would make the window jump on every
+  // keystroke as the search filters the list down.
+  if (panel.id === 'playlists-panel') {
+    SetPanelHeight(PANEL_MAX_HEIGHT)
+    return
+  }
+
+  // Panels normally flex to fill the window and scroll what doesn't
+  // fit, so they report the window's height rather than their own.
+  // Freeing them briefly is what makes them state what they actually
+  // want - the same trick measureNeededBarWidth uses for width.
+  const prevFlex = panel.style.flex
+  const prevHeight = panel.style.height
+  const prevOverflow = panel.style.overflow
+
+  panel.style.flex = 'none'
+  panel.style.height = 'auto'
+  panel.style.overflow = 'visible'
+  const needed = Math.ceil(panel.getBoundingClientRect().height)
+
+  panel.style.flex = prevFlex
+  panel.style.height = prevHeight
+  panel.style.overflow = prevOverflow
+
+  SetPanelHeight(Math.min(PANEL_MAX_HEIGHT, needed))
+}
 
 // --- Playlist + song picker ---
 const playlistSearchInput = document.getElementById('playlist-search-input')
@@ -647,6 +694,9 @@ bgGradientToggle.addEventListener('change', (e) => {
   bgGradientRow.classList.toggle('hidden', !e.target.checked)
   localStorage.setItem('bgGradientEnabled', e.target.checked)
   applyBackground()
+  // Showing/hiding the colour row changes how tall the panel needs to
+  // be, and it's the one row that appears while the panel is already open.
+  updatePanelHeight()
 })
 
 bgGradientColorInput.addEventListener('input', (e) => {
