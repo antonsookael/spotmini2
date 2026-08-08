@@ -27,6 +27,13 @@ func Run(assets embed.FS) error {
 		MinHeight:   collapsedHeight,
 		Frameless:   true,
 		AlwaysOnTop: true,
+		// Frameless windows keep a resize border, so clicking near an
+		// edge starts an OS resize drag. That drag captures the mouse,
+		// so the webview never sees the mouseup and the JS drag handler
+		// stays armed - leaving the window stuck following the cursor.
+		// Nothing here wants manual resizing anyway: the width is
+		// auto-fit's and the height is the panel's.
+		DisableResize: true,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},

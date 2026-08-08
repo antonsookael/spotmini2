@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -79,8 +80,20 @@ func (a *App) GetNowPlaying() playback.PlaybackState {
 	return state
 }
 
-// withDeviceRevival runs action, and retries it once after reviving a
-// device if Spotify had dropped the active one for being idle. Emits
+// revivalRetryDelays is how long to wait before each retry after
+// reviving a device. The transfer isn't instant, so retrying
+// immediately just gets rejected again - but a single fixed wait long
+// enough for the worst case makes every revival feel that slow. Backing
+// off instead means the common case lands on the first retry, while
+// still allowing longer overall than one wait would.
+var revivalRetryDelays = []time.Duration{
+	300 * time.Millisecond,
+	500 * time.Millisecond,
+	900 * time.Millisecond,
+}
+
+// withDeviceRevival runs action, retrying it after reviving a device if
+// Spotify had dropped the active one for being idle. Emits
 // "playback-changed" so the frontend resyncs immediately - except on a
 // Premium rejection, which emits "premium-required" instead and skips
 // the resync that would otherwise wipe that message. Returns action's
@@ -89,10 +102,25 @@ func (a *App) withDeviceRevival(action func(token string) error) error {
 	token := a.getToken()
 	err := action(token)
 	if errors.Is(err, playback.ErrNoActiveDevice) && a.reviveDevice(token) {
-		// The transfer isn't instant; retrying immediately hits
-		// Spotify before the device is marked active again.
-		time.Sleep(1500 * time.Millisecond)
-		err = action(token)
+		// Safe to repeat even for something like NextTrack, which would
+		// skip twice if it half-applied: these are rejections, so
+		// nothing happened to repeat.
+		for _, delay := range revivalRetryDelays {
+			time.Sleep(delay)
+			err = action(token)
+
+			// Only a success or a flat refusal ends this. Retrying just
+			// while the error stays ErrNoActiveDevice looks right but
+			// loses the command: a device that's still coming up gets
+			// rejected with plenty of other codes too, which fall
+			// through request.go to a generic error - and treating one
+			// of those as final gave up on the very case this exists to
+			// handle.
+			if err == nil || errors.Is(err, playback.ErrPremiumRequired) {
+				break
+			}
+			fmt.Println("Retrying after device revival:", err)
+		}
 	}
 	if errors.Is(err, playback.ErrPremiumRequired) {
 		runtime.EventsEmit(a.ctx, "premium-required")

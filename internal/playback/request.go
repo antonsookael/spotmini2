@@ -6,7 +6,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 )
+
+// apiPrefix is trimmed off logged URLs - it's on every one of them, and
+// dropping it keeps the interesting part (the endpoint and its query,
+// which is what says what the command actually did) at the front.
+const apiPrefix = "https://api.spotify.com/v1"
 
 // ErrNoActiveDevice is returned when Spotify rejects a player command
 // because there's no active device - typically because one sat idle
@@ -41,8 +47,16 @@ func doPlayerRequest(method, url, accessToken string, body io.Reader) error {
 	defer resp.Body.Close()
 
 	respBody, _ := io.ReadAll(resp.Body)
-	fmt.Println("Status:", resp.StatusCode)
-	fmt.Println("Response body:", string(respBody))
+
+	// The endpoint is what identifies the command - a bare status and
+	// body gives no clue whether it was a skip, a volume change or a
+	// device transfer that produced it.
+	action := method + " " + strings.TrimPrefix(url, apiPrefix)
+	if len(respBody) > 0 {
+		fmt.Printf("[spotify] %s -> %d %s\n", action, resp.StatusCode, respBody)
+	} else {
+		fmt.Printf("[spotify] %s -> %d\n", action, resp.StatusCode)
+	}
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return nil
@@ -64,5 +78,7 @@ func doPlayerRequest(method, url, accessToken string, body io.Reader) error {
 		}
 	}
 
-	return fmt.Errorf("spotify returned status %d: %s", resp.StatusCode, string(respBody))
+	// Carries the endpoint so callers that only surface the error - like
+	// the revival retry loop - still say which command it was.
+	return fmt.Errorf("%s: spotify returned status %d: %s", action, resp.StatusCode, string(respBody))
 }
