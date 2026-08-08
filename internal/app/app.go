@@ -110,6 +110,13 @@ func (a *App) startup(ctx context.Context) {
 		a.startTokenRefreshLoop()
 	}()
 
+	// Off the startup path on its own goroutine: it's a network call to
+	// a third party, and nothing about the app should wait on GitHub
+	// being reachable. Runs once per launch, which with autostart on
+	// means once per login - the point at which a new build is worth
+	// hearing about.
+	go a.checkForUpdate()
+
 	// Registration is deliberately not pinned to this goroutine: on
 	// macOS golang.design/x/hotkey dispatches the CGEventTap setup onto
 	// the main queue itself and attaches the source to CFRunLoopGetMain,

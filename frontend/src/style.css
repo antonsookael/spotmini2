@@ -504,6 +504,16 @@ body {
   opacity: 0.6;
 }
 
+/* Only applied once an update actually exists, so the line reads as
+   dimmed build info the rest of the time. Full opacity plus the pointer
+   is what separates "this is a fact about your build" from "this is
+   something you can click". */
+#app-version.update-available {
+  opacity: 1;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 .hotkey-btn {
   min-width: 90px;
   padding: 4px 8px;

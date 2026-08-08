@@ -16,6 +16,7 @@ import {
   IsAutostartEnabled,
   SetAutostart,
   GetVersion,
+  OpenReleasePage,
   SnapWindowToEdges,
   SetWindowWidth,
   SetPanelHeight,
@@ -982,6 +983,23 @@ document.getElementById('hotkeys-back-btn').addEventListener('click', () => {
 
 // Stamped in at build time (see internal/app/version.go); reads "dev"
 // for local builds.
+const versionEl = document.getElementById('app-version')
+let runningVersion = ''
+
 GetVersion().then((v) => {
-  document.getElementById('app-version').textContent = `spotmini ${v}`
+  runningVersion = v
+  versionEl.textContent = `spotmini ${v}`
+})
+
+// Emitted at startup only when GitHub's latest release is newer than
+// this build - so arriving at all means there's something to say.
+//
+// The version line is the notice's permanent home rather than a bar
+// message: the bar is transient by design, and an update that scrolled
+// past while the user was looking elsewhere may as well not have been
+// mentioned. The line stays until they act on it.
+EventsOn('update-available', (update) => {
+  versionEl.textContent = `spotmini ${runningVersion} — ${update.version} available`
+  versionEl.classList.add('update-available')
+  versionEl.addEventListener('click', OpenReleasePage)
 })
