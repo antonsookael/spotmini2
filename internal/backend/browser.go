@@ -1,28 +1,17 @@
 package backend
 
-import (
-	"fmt"
-	"os/exec"
-	"runtime"
-)
+import "spotmini-gui/internal/logging"
 
 // openBrowser launches the system's default browser to the given URL.
-// The command differs per OS: Windows needs "cmd /c start", macOS uses
-// "open", and Linux typically has "xdg-open".
+// The per-platform implementations behind it live in
+// browser_windows.go / browser_other.go.
+//
+// Failing to open is worth logging rather than printing: it happens
+// during login, before there's a window to show anything in, and a
+// built app has no console for the fallback "open this manually" line
+// to appear on - so without the log there is nothing at all to go on.
 func openBrowser(url string) {
-	var cmd *exec.Cmd
-
-	switch runtime.GOOS {
-	case "windows":
-		cmd = exec.Command("cmd", "/c", "start", "", url)
-	case "darwin":
-		cmd = exec.Command("open", url)
-	default: // linux and other unix-likes
-		cmd = exec.Command("xdg-open", url)
-	}
-
-	if err := cmd.Start(); err != nil {
-		fmt.Println("Couldn't open browser automatically:", err)
-		fmt.Println("Open this URL manually:", url)
+	if err := openURL(url); err != nil {
+		logging.Printf("Couldn't open the browser automatically (%v) - open this URL manually: %s", err, url)
 	}
 }
