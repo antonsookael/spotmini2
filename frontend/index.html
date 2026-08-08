@@ -40,6 +40,14 @@
           <ul id="playlist-list"></ul>
       </div>
 
+      <div id="hotkeys-panel" class="hidden">
+          <div class="panel-head">
+            <button id="hotkeys-back-btn" title="Back to settings">&#8592;</button>
+            <h3>Hotkeys</h3>
+          </div>
+          <ul id="hotkey-list"></ul>
+      </div>
+
       <div id="settings-panel" class="hidden">
           <h3>Customize</h3>
 
@@ -116,7 +124,11 @@
             <p class="hint">Click a hotkey to change it, then press the new combo (Esc to cancel)</p>
           -->
 
-          <p id="hotkey-summary"></p>
+          <div class="setting-row">
+            <label>Hotkeys</label>
+            <button id="hotkeys-open-btn" class="panel-link-btn">View</button>
+          </div>
+
           <p id="app-version"></p>
       </div>
 

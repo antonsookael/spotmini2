@@ -5,6 +5,7 @@ import {
   SetHotkeyBinding,
   ToggleSettingsPanel,
   TogglePlaylistsPanel,
+  ToggleHotkeysPanel,
   GetPlaylists,
   PlayPlaylist,
   PlayLikedSongs,
@@ -294,11 +295,9 @@ EventsOn('no-device', () => {
 
 // Fired whenever a panel is toggled, by button or hotkey.
 EventsOn('panel-changed', (panel) => {
-  const settingsPanel = document.getElementById('settings-panel')
-  const playlistsPanel = document.getElementById('playlists-panel')
-
-  settingsPanel.classList.toggle('hidden', panel !== 'settings')
-  playlistsPanel.classList.toggle('hidden', panel !== 'playlists')
+  document.getElementById('settings-panel').classList.toggle('hidden', panel !== 'settings')
+  document.getElementById('playlists-panel').classList.toggle('hidden', panel !== 'playlists')
+  document.getElementById('hotkeys-panel').classList.toggle('hidden', panel !== 'hotkeys')
 
   if (panel === 'playlists') {
     openPlaylistsPanel()
@@ -797,12 +796,42 @@ Promise.all([GetHotkeyConfig(), Environment()]).then(([cfg, env]) => {
     button.textContent = formatBinding(cfg[button.dataset.action])
   })
 
-  const summaryEl = document.getElementById('hotkey-summary')
-  if (summaryEl) {
-    summaryEl.textContent = HOTKEY_ACTIONS.map(
-      (action) => `${HOTKEY_LABELS[action]} ${formatBinding(cfg[action])}`
-    ).join(' · ')
+  renderHotkeyList(cfg)
+})
+
+// One row per action, action name left and combo right. Built from the
+// live config rather than hardcoded, so it stays correct once these
+// become rebindable.
+function renderHotkeyList(cfg) {
+  const list = document.getElementById('hotkey-list')
+  list.innerHTML = ''
+
+  for (const action of HOTKEY_ACTIONS) {
+    const row = document.createElement('li')
+    row.className = 'hotkey-row'
+
+    const name = document.createElement('span')
+    name.textContent = HOTKEY_LABELS[action]
+
+    const key = document.createElement('span')
+    key.className = 'key'
+    key.textContent = formatBinding(cfg[action])
+
+    row.appendChild(name)
+    row.appendChild(key)
+    list.appendChild(row)
   }
+}
+
+// The hotkeys panel has no global hotkey of its own - it's reached from
+// the settings panel and goes back there, so the two buttons are the
+// only way in and out.
+document.getElementById('hotkeys-open-btn').addEventListener('click', () => {
+  ToggleHotkeysPanel()
+})
+
+document.getElementById('hotkeys-back-btn').addEventListener('click', () => {
+  ToggleSettingsPanel()
 })
 
 // Stamped in at build time (see internal/app/version.go); reads "dev"

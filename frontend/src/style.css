@@ -400,19 +400,106 @@ body {
   line-height: 1.4;
 }
 
-#hotkey-summary {
-  margin-top: 6px;
-  font-size: 10px;
-  line-height: 1.4;
+/* Same column layout as #playlists-panel: a fixed head with the list
+   scrolling beneath it, so a long list never pushes the title away. */
+#hotkeys-panel {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--fg);
+  padding: 12px;
+  border-top: 1px solid #282828;
+  font-family: -apple-system, "Segoe UI", sans-serif;
+}
+
+.panel-head {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.panel-head h3 {
+  margin-bottom: 0;
+}
+
+#hotkeys-back-btn {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
   color: var(--fg);
   opacity: 0.6;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+#hotkeys-back-btn:hover {
+  opacity: 1;
+  color: var(--accent-color);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+#hotkey-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.hotkey-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  /* Tight enough that all ten fit the shared panel height without the
+     list needing to scroll. */
+  padding: 2px 0;
+  font-size: 12px;
+}
+
+.hotkey-row .key {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  border: 1px solid #282828;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 11px;
+  color: var(--fg);
+}
+
+/* Reads as an action rather than a setting value, so it's styled like
+   the hotkey buttons instead of the checkboxes beside it. */
+.panel-link-btn {
+  padding: 3px 10px;
+  border: 1px solid #282828;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--fg);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.panel-link-btn:hover {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
 }
 
 #app-version {
   margin-top: 8px;
   font-size: 10px;
-  /* Same treatment as #hotkey-summary above it: a fixed grey stops
-     adapting once the background is customised to something light. */
+  /* Derived from --fg rather than a fixed grey, which stops adapting
+     once the background is customised to something light. */
   color: var(--fg);
   opacity: 0.6;
 }

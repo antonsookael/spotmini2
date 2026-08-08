@@ -32,13 +32,13 @@ const (
 
 	collapsedHeight = 50
 
-	// Sized against the settings panel's full content at windowWidth:
-	// every row with the gradient picker showing, plus the hotkey
-	// summary and version line. Auto-fit can leave the window narrower
-	// than that, which wraps the summary onto more lines than this
-	// covers - the panel scrolls in that case rather than growing, since
-	// the height can't track the width.
-	expandedHeight = 390
+	// Shared by every panel, so it's sized against the tallest - the
+	// settings panel at windowWidth with the gradient picker showing.
+	// The hotkeys panel is shorter and simply leaves the slack empty.
+	// A narrower window (auto-fit can shrink it) wraps content onto more
+	// lines than this covers; panels scroll in that case rather than
+	// growing, since the height can't track the width.
+	expandedHeight = 375
 )
 
 // App holds the shared state behind every frontend-callable method.

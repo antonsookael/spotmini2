@@ -16,6 +16,14 @@ func (a *App) TogglePlaylistsPanel() {
 	a.togglePanel("playlists")
 }
 
+// ToggleHotkeysPanel opens/closes the hotkey list. Deliberately absent
+// from hotkeys.Actions: it's reached from a button in the settings
+// panel, so a global hotkey for the list of global hotkeys would be one
+// more binding to remember for no benefit.
+func (a *App) ToggleHotkeysPanel() {
+	a.togglePanel("hotkeys")
+}
+
 // ToggleAlwaysOnTop lets the frontend flip the setting - it owns the
 // value (localStorage) and the checkbox, so flipping it here would
 // desync both.
