@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -21,14 +22,14 @@ func (a *App) PlayPause() {
 		return
 	}
 	if playing {
-		a.withDeviceRevival(playback.PausePlayback)
+		a.withDeviceRevival("pause", playback.PausePlayback)
 	} else {
-		a.withDeviceRevival(playback.PlayPlayback)
+		a.withDeviceRevival("play", playback.PlayPlayback)
 	}
 }
 
 func (a *App) NextTrack() {
-	a.withDeviceRevival(playback.NextTrack)
+	a.withTrackChange("next", playback.NextTrack)
 }
 
 // PreviousTrack restarts the current track once you're past
@@ -39,12 +40,14 @@ func (a *App) NextTrack() {
 func (a *App) PreviousTrack() {
 	state, err := playback.NowPlaying(a.getToken())
 	if err == nil && state.ProgressMs > previousRestartMs {
-		a.withDeviceRevival(func(token string) error {
+		// Restarting the same track, so no change to wait for - only the
+		// skip below lands somewhere new.
+		a.withDeviceRevival("restart", func(token string) error {
 			return playback.Seek(token, 0)
 		})
 		return
 	}
-	a.withDeviceRevival(playback.PreviousTrack)
+	a.withTrackChange("previous", playback.PreviousTrack)
 }
 
 func (a *App) ToggleShuffle() {
@@ -53,7 +56,7 @@ func (a *App) ToggleShuffle() {
 	if err != nil {
 		return
 	}
-	a.withDeviceRevival(func(token string) error {
+	a.withDeviceRevival("shuffle", func(token string) error {
 		return playback.ToggleShuffle(token, !shuffled)
 	})
 }
@@ -66,7 +69,7 @@ func (a *App) ToggleLoop() {
 	if err != nil {
 		return
 	}
-	a.withDeviceRevival(func(token string) error {
+	a.withDeviceRevival("loop", func(token string) error {
 		_, err := playback.ToggleLoop(token, current)
 		return err
 	})
@@ -92,13 +95,48 @@ var revivalRetryDelays = []time.Duration{
 	900 * time.Millisecond,
 }
 
-// withDeviceRevival runs action, retrying it after reviving a device if
+// withDeviceRevival runs a command that leaves the current track alone -
+// play/pause, shuffle, repeat, volume. See runPlayerCommand.
+func (a *App) withDeviceRevival(name string, action func(token string) error) error {
+	return a.runPlayerCommand(name, false, action)
+}
+
+// withTrackChange runs a command that lands on a *different* track, and
+// tells the frontend to expect one.
+//
+// The distinction is the whole point. Spotify's read API lags its own
+// writes, so the resync fired straight after a skip routinely comes back
+// still describing the track we just skipped away from - and the bar
+// then sat on that stale title until the next ten-second poll, which
+// reads as the skip having done nothing at all. Knowing a change is
+// coming lets the frontend keep reading until Spotify agrees, instead of
+// trusting the first answer. It can't infer that itself: play/pause and
+// shuffle emit the same event and legitimately keep the same track, so
+// an unconditional retry loop would spin on every one of them.
+func (a *App) withTrackChange(name string, action func(token string) error) error {
+	return a.runPlayerCommand(name, true, action)
+}
+
+// runPlayerCommand runs action, retrying it after reviving a device if
 // Spotify had dropped the active one for being idle. Emits
 // "playback-changed" so the frontend resyncs immediately - except on a
 // Premium rejection, which emits "premium-required" instead and skips
 // the resync that would otherwise wipe that message. Returns action's
 // final error; most callers ignore it.
-func (a *App) withDeviceRevival(action func(token string) error) error {
+//
+// name is what the command is called in the timing line printed on the
+// way out - "next", "shuffle" and so on. Without it the durations can't
+// be told apart, since every command reaches Spotify through the same
+// two helpers.
+func (a *App) runPlayerCommand(name string, expectTrackChange bool, action func(token string) error) error {
+	start := time.Now()
+	// Reported on every path out, including the failures - a command
+	// that gave up after a device revival is exactly the one worth
+	// knowing the duration of.
+	defer func() {
+		fmt.Printf("[command] %s finished in %s\n", name, time.Since(start).Round(time.Millisecond))
+	}()
+
 	token := a.getToken()
 	err := action(token)
 	if errors.Is(err, playback.ErrNoActiveDevice) && a.reviveDevice(token) {
@@ -133,8 +171,28 @@ func (a *App) withDeviceRevival(action func(token string) error) error {
 		runtime.EventsEmit(a.ctx, "no-device")
 		return err
 	}
-	runtime.EventsEmit(a.ctx, "playback-changed")
+	// The start time rides along so the frontend can report a total that
+	// runs from the keypress rather than from whenever this event
+	// happened to reach it - the confirmation reads are most of the wait
+	// on a skip, and timing only the Go half would hide that.
+	runtime.EventsEmit(a.ctx, "playback-changed", expectTrackChange, start.UnixMilli())
 	return err
+}
+
+// ReportTrackChange logs how long a skip took to become visible in the
+// bar, measured from the keypress that started it. Called by the
+// frontend once its confirmation reads settle, since only it knows when
+// the new title actually went on screen.
+func (a *App) ReportTrackChange(totalMs int, reads int, confirmed bool) {
+	if !confirmed {
+		// Gave up without Spotify ever reporting a different track. Goes
+		// to the log file rather than stdout: the bar is showing a track
+		// that may well be the wrong one, which is the failure this
+		// whole path exists to catch.
+		logging.Printf("[command] track change unconfirmed after %dms and %d reads", totalMs, reads)
+		return
+	}
+	fmt.Printf("[command] track change visible after %dms and %d reads\n", totalMs, reads)
 }
 
 // reviveDevice transfers playback to an available device without

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"spotmini-gui/internal/logging"
 )
@@ -27,6 +28,13 @@ var ErrNoActiveDevice = errors.New("no active device")
 // accounts outright, regardless of device state.
 var ErrPremiumRequired = errors.New("spotify premium required")
 
+// took formats how long a call has been running, rounded to the
+// millisecond - sub-millisecond precision is noise next to a network
+// round trip, and the full float makes the log lines hard to scan.
+func took(start time.Time) time.Duration {
+	return time.Since(start).Round(time.Millisecond)
+}
+
 // doPlayerGet issues a read against the player API and returns the raw
 // response body, or a nil body for the 204 Spotify answers with when
 // nothing is active at all.
@@ -39,6 +47,7 @@ var ErrPremiumRequired = errors.New("spotify premium required")
 // apart, and none of them can do it by looking at the body alone.
 func doPlayerGet(url, accessToken string) ([]byte, error) {
 	action := "GET " + strings.TrimPrefix(url, apiPrefix)
+	start := time.Now()
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -49,7 +58,7 @@ func doPlayerGet(url, accessToken string) ([]byte, error) {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		logging.Printf("[spotify] %s -> %v", action, err)
+		logging.Printf("[spotify] %s -> %v in %s", action, err, took(start))
 		return nil, err
 	}
 	defer resp.Body.Close()
@@ -62,9 +71,11 @@ func doPlayerGet(url, accessToken string) ([]byte, error) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		// %s rather than as the format string: a response body can
 		// contain a stray % that would otherwise be read as a verb.
-		logging.Printf("%s", fmt.Sprintf("[spotify] %s -> %d %s", action, resp.StatusCode, string(body)))
+		logging.Printf("%s", fmt.Sprintf("[spotify] %s -> %d %s in %s", action, resp.StatusCode, string(body), took(start)))
 		return nil, fmt.Errorf("%s: spotify returned status %d: %s", action, resp.StatusCode, string(body))
 	}
+
+	fmt.Printf("[spotify] %s -> %d in %s\n", action, resp.StatusCode, took(start))
 
 	// Distinguished from a body the caller can parse, rather than
 	// handed back as an empty slice - "nothing is active" means
@@ -84,6 +95,7 @@ func doPlayerRequest(method, url, accessToken string, body io.Reader) error {
 	// body gives no clue whether it was a skip, a volume change or a
 	// device transfer that produced it.
 	action := method + " " + strings.TrimPrefix(url, apiPrefix)
+	start := time.Now()
 
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
@@ -99,7 +111,7 @@ func doPlayerRequest(method, url, accessToken string, body io.Reader) error {
 	if err != nil {
 		// Never reached Spotify at all - worth recording, since from the
 		// user's side it looks identical to a command being ignored.
-		logging.Printf("[spotify] %s -> %v", action, err)
+		logging.Printf("[spotify] %s -> %v in %s", action, err, took(start))
 		return err
 	}
 	defer resp.Body.Close()
@@ -110,6 +122,9 @@ func doPlayerRequest(method, url, accessToken string, body io.Reader) error {
 	if len(respBody) > 0 {
 		line += " " + string(respBody)
 	}
+	// Appended last so the duration reads the same way on every line,
+	// whether or not Spotify sent a body back.
+	line += " in " + took(start).String()
 
 	// Successes stay on stdout only. They're the routine case and would
 	// bulk up a log file that's meant to be read after something went

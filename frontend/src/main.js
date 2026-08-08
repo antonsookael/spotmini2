@@ -12,6 +12,7 @@ import {
   SearchTracks,
   PlayTrack,
   SaveTrackToLiked,
+  ReportTrackChange,
   IsAutostartEnabled,
   SetAutostart,
   GetVersion,
@@ -157,10 +158,19 @@ function render() {
     `${formatTime(currentSeconds)}/${formatTime(totalSeconds)}`
 }
 
+// Reads are never cancelled, only superseded: a request that's been
+// overtaken while in flight has its answer thrown away. Without this the
+// last response to *arrive* wins rather than the last one issued, so
+// during rapid skips an early read still carrying the old track could
+// land after a newer, correct one and overwrite it.
+let fetchSeq = 0
+
 // Re-syncs the local counter with Spotify's actual state.
 async function fetchNowPlaying() {
+  const seq = ++fetchSeq
   try {
     const state = await GetNowPlaying()
+    if (seq !== fetchSeq) return
     if (!state.item || !state.item.name) {
       currentSong = ''
       currentSpotifyURI = ''
@@ -185,6 +195,7 @@ async function fetchNowPlaying() {
     render()
     updateAutoWidth()
   } catch (err) {
+    if (seq !== fetchSeq) return
     currentSpotifyURI = ''
     trackInfoEl.classList.remove('clickable')
     trackInfoEl.textContent = 'Error loading playback'
@@ -236,9 +247,58 @@ EventsOn('logged-in', () => {
   fetchNowPlaying()
 })
 
+// How long to wait before each attempt at reading back a track change.
+// Spotify's read API lags its own writes, so the first read after a skip
+// usually still describes the track we skipped away from - backing off
+// lets the common case land on the first attempt while still allowing
+// longer overall than one fixed wait would.
+const trackChangeRetryDelays = [300, 400, 700, 1100, 1600]
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+// Bumped by each new skip so an older confirmation loop stops rather
+// than carrying on polling for a change that's already been overtaken.
+let trackChangeAttempt = 0
+
+// Reads until Spotify reports a track other than the one we skipped
+// away from, rather than trusting the first answer. Gives up after the
+// last delay and keeps whatever came back - a track that genuinely
+// doesn't change (a single-song context on repeat) would otherwise poll
+// forever.
+// startedAt is the keypress, handed over by Go, so the reported total
+// covers the whole thing rather than just the part after the command
+// came back.
+async function confirmTrackChange(startedAt) {
+  const attempt = ++trackChangeAttempt
+  const previousURI = currentSpotifyURI
+  const elapsed = () => Math.round(Date.now() - startedAt)
+  let reads = 0
+
+  for (const delay of trackChangeRetryDelays) {
+    await sleep(delay)
+    // Superseded by a newer skip, which will report its own total -
+    // timing this one to a title that's already been replaced would
+    // just be noise.
+    if (attempt !== trackChangeAttempt) return
+    await fetchNowPlaying()
+    reads++
+    if (currentSpotifyURI !== previousURI) {
+      ReportTrackChange(elapsed(), reads, true)
+      return
+    }
+  }
+  ReportTrackChange(elapsed(), reads, false)
+}
+
 // Emitted after any playback command, so the UI reflects it right away
-// instead of waiting for the next poll.
-EventsOn('playback-changed', () => {
+// instead of waiting for the next poll. A command that lands on a
+// different track says so, and that read has to be confirmed rather than
+// taken at face value.
+EventsOn('playback-changed', (expectTrackChange, startedAt) => {
+  if (expectTrackChange) {
+    confirmTrackChange(startedAt)
+    return
+  }
   setTimeout(fetchNowPlaying, 300)
 })
 

@@ -30,7 +30,7 @@ func (a *App) GetPlaylists() ([]playback.Playlist, error) {
 // PlayPlaylist starts playback of the playlist at uri from the
 // beginning.
 func (a *App) PlayPlaylist(uri string) {
-	a.withDeviceRevival(func(token string) error {
+	a.withTrackChange("playPlaylist", func(token string) error {
 		return playback.PlayPlaylist(token, uri)
 	})
 }
@@ -47,7 +47,7 @@ func (a *App) PlayLikedSongs() {
 	if len(uris) == 0 {
 		return
 	}
-	a.withDeviceRevival(func(token string) error {
+	a.withTrackChange("playLikedSongs", func(token string) error {
 		return playback.PlayURIs(token, uris)
 	})
 }
@@ -69,7 +69,7 @@ func (a *App) SearchTracks(query string) []playback.TrackResult {
 // PlayTrack starts playback of a single track by URI - used when
 // picking a song from search results.
 func (a *App) PlayTrack(uri string) {
-	a.withDeviceRevival(func(token string) error {
+	a.withTrackChange("playTrack", func(token string) error {
 		return playback.PlayURIs(token, []string{uri})
 	})
 }

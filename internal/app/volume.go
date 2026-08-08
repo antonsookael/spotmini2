@@ -59,7 +59,7 @@ func (a *App) adjustVolume(delta int) {
 	}
 
 	var applied int
-	err := a.withDeviceRevival(func(token string) error {
+	err := a.withDeviceRevival("volume", func(token string) error {
 		var err error
 		applied, err = playback.SetVolume(token, current+delta)
 		return err
