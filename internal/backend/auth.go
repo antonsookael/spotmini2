@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -155,7 +156,18 @@ func startLogin() {
 	params.Set("code_challenge", codeChallengeFor(verifier))
 	params.Set("state", state)
 
-	authURL := "https://accounts.spotify.com/authorize?" + params.Encode()
+	// Encode() writes spaces as "+", which only means a space to a
+	// reader applying form-encoding rules - under RFC 3986 it's a
+	// literal plus. scope is the one value here with spaces in it, and a
+	// scope list run together with pluses is a set of scopes nobody
+	// granted. %20 is a space under both readings, so it removes the
+	// question entirely.
+	//
+	// Safe as a blanket replacement: a plus that was really in a value
+	// comes out of Encode() as %2B, so a bare + in this string can only
+	// ever be a space.
+	authURL := "https://accounts.spotify.com/authorize?" +
+		strings.ReplaceAll(params.Encode(), "+", "%20")
 	fmt.Println("Opening login URL in your browser:")
 	fmt.Println(authURL)
 	openBrowser(authURL)
