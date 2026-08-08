@@ -36,9 +36,9 @@ let currentSpotifyURI = ''
 let isCurrentlyPlaying = false
 let isShuffled = false
 let repeatState = 'off'
-// Timestamp the premium notice holds the track-info slot until; read by
-// render(), set by the premium-required handler further down.
-let premiumMessageUntil = 0
+// Timestamp a notice holds the track-info slot until; read by render(),
+// set by showBarMessage() further down.
+let barMessageUntil = 0
 
 // The spotify: URI scheme hands off to the desktop app, unlike an
 // https:// link which always opens a browser. currentSpotifyURI is
@@ -118,10 +118,10 @@ function formatTime(totalSecs) {
 }
 
 function render() {
-  // The premium notice owns the track-info slot until it expires -
-  // otherwise the once-a-second tick below would overwrite it almost
-  // immediately, long before it could be read.
-  if (Date.now() < premiumMessageUntil) return
+  // A notice owns the track-info slot until it expires - otherwise the
+  // once-a-second tick below would overwrite it almost immediately,
+  // long before it could be read.
+  if (Date.now() < barMessageUntil) return
 
   trackInfoEl.classList.toggle('clickable', !!currentSpotifyURI)
 
@@ -249,25 +249,47 @@ EventsOn('volume-changed', (percent) => {
   showToast(`Vol ${percent}%`)
 })
 
-// Spotify rejects every playback command on a Free account, so without
-// this a Free user sees nothing happen and no reason why. Shown in the
-// track-info slot rather than as a toast, then cleared by re-fetching.
-const PREMIUM_MESSAGE_MS = 3000
-let premiumMessageTimeout = null
+// Takes over the track-info slot for a few seconds. Used where a
+// command was rejected for a reason worth explaining - otherwise
+// nothing happens and there's no hint why. Shown here rather than as a
+// toast so it's read where the user is already looking.
+let barMessageTimeout = null
 
-EventsOn('premium-required', () => {
-  premiumMessageUntil = Date.now() + PREMIUM_MESSAGE_MS
-  trackInfoEl.textContent = 'Spotify Premium is required for playback control'
+function showBarMessage(text, ms) {
+  barMessageUntil = Date.now() + ms
+  trackInfoEl.textContent = text
   timerEl.textContent = ''
   statusDotEl.classList.add('hidden')
   shuffleIconEl.classList.add('hidden')
   loopIconEl.classList.add('hidden')
 
-  clearTimeout(premiumMessageTimeout)
-  premiumMessageTimeout = setTimeout(() => {
-    premiumMessageUntil = 0
+  // Resize in the same tick the text changes, before the browser gets a
+  // chance to paint. Without this the window keeps whatever width the
+  // last song needed - and auto-fit shrinks it right down while idle,
+  // which is exactly when these messages tend to fire, so the message
+  // would show up truncated and only widen later, if at all.
+  updateAutoWidth()
+
+  clearTimeout(barMessageTimeout)
+  barMessageTimeout = setTimeout(() => {
+    barMessageUntil = 0
     fetchNowPlaying()
-  }, PREMIUM_MESSAGE_MS)
+  }, ms)
+}
+
+// Spotify rejects every playback command on a Free account, so without
+// this a Free user sees nothing happen and no reason why.
+// Kept short enough to fit the bar at its default width - the longer
+// wording this replaced was silently ellipsized.
+EventsOn('premium-required', () => {
+  showBarMessage('Spotify Premium required for playback', 3000)
+})
+
+// Nothing is connected to Spotify Connect - the app is closed rather
+// than merely idle, so there's no device to hand playback to and the
+// command can't go anywhere.
+EventsOn('no-device', () => {
+  showBarMessage("Spotify isn't open or playing anywhere", 5000)
 })
 
 // Fired whenever a panel is toggled, by button or hotkey.

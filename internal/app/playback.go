@@ -126,6 +126,13 @@ func (a *App) withDeviceRevival(action func(token string) error) error {
 		runtime.EventsEmit(a.ctx, "premium-required")
 		return err
 	}
+	// Still nothing to play on, either because there was no device to
+	// revive or because reviving didn't take. Worth saying out loud:
+	// otherwise the command just appears to do nothing.
+	if errors.Is(err, playback.ErrNoActiveDevice) {
+		runtime.EventsEmit(a.ctx, "no-device")
+		return err
+	}
 	runtime.EventsEmit(a.ctx, "playback-changed")
 	return err
 }
@@ -135,7 +142,17 @@ func (a *App) withDeviceRevival(action func(token string) error) error {
 // true if a device was found.
 func (a *App) reviveDevice(token string) bool {
 	devices, err := playback.GetDevices(token)
-	if err != nil || len(devices) == 0 {
+	if err != nil {
+		logging.Printf("Device revival: could not list devices: %v", err)
+		return false
+	}
+
+	// An empty list is a different problem from an idle device: nothing
+	// is connected to Spotify Connect at all, so the app is shut rather
+	// than merely asleep. There's nothing to transfer to, and the Web
+	// API can't start a closed app - the caller warns instead.
+	if len(devices) == 0 {
+		logging.Printf("Device revival: no devices available - Spotify isn't open anywhere")
 		return false
 	}
 
