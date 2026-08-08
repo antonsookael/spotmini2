@@ -54,6 +54,11 @@ func (a *App) adjustVolume(delta int) {
 		var err error
 		current, err = a.currentVolume(token)
 		if err != nil {
+			// Same reasoning as the read-then-write commands: a volume
+			// change is relative, so a failed read leaves nothing to
+			// change it from, and giving up without a word is what made
+			// that indistinguishable from the hotkey never firing.
+			a.reportCommandFailure("volume", err)
 			return
 		}
 	}
@@ -90,11 +95,16 @@ func (a *App) currentVolume(token string) (int, error) {
 		return volume, err
 	}
 
-	if !a.reviveDevice(token) {
-		// Nothing connected to revive, so say so rather than leaving the
-		// keypress looking ignored - the same warning the playback
-		// commands give in this situation.
-		runtime.EventsEmit(a.ctx, "no-device")
+	// Returned rather than announced here: the caller runs every failure
+	// through reportCommandFailure, which turns these into the right
+	// warning. Emitting from here as well showed the message twice.
+	revived, reviveErr := a.reviveDevice(token)
+	if errors.Is(reviveErr, playback.ErrPremiumRequired) {
+		// The transfer said why, and it's a better answer than the
+		// "no active device" the volume read came back with.
+		return 0, reviveErr
+	}
+	if !revived {
 		return 0, err
 	}
 

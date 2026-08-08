@@ -367,6 +367,14 @@ EventsOn('login-failed', () => {
   showBarMessage('Spotify login failed - restart to retry', 10000)
 })
 
+// A command gave up before it could run, because reading the current
+// state failed - a rejected token or a missing OAuth scope, typically.
+// Nothing the user can fix from here, so the message points at the log,
+// which carries the status Spotify actually returned.
+EventsOn('command-failed', () => {
+  showBarMessage('Spotify request failed - check the log', 4000)
+})
+
 // Nothing is connected to Spotify Connect - the app is closed rather
 // than merely idle, so there's no device to hand playback to and the
 // command can't go anywhere.

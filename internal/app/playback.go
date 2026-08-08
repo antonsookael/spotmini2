@@ -15,10 +15,36 @@ import (
 // than skipping to the one before.
 const previousRestartMs = 5000
 
+// reportCommandFailure surfaces a command that gave up before it could
+// run, instead of letting it look like a dead hotkey.
+//
+// The read-then-write commands can't carry on without their read -
+// play/pause has to know which one it is, and repeat has to know what
+// to advance from - so bailing is right. Bailing *quietly* was not:
+// a rejected token, a missing OAuth scope and an unregistered hotkey
+// all presented identically, as a keypress that did nothing at all,
+// with nothing on screen and nothing in the log to tell them apart.
+func (a *App) reportCommandFailure(name string, err error) {
+	// The two the user can actually act on get their own message; the
+	// rest fall through to the generic one, which at least points at the
+	// log rather than saying nothing.
+	if errors.Is(err, playback.ErrPremiumRequired) {
+		runtime.EventsEmit(a.ctx, "premium-required")
+		return
+	}
+	if errors.Is(err, playback.ErrNoActiveDevice) {
+		runtime.EventsEmit(a.ctx, "no-device")
+		return
+	}
+	logging.Printf("[command] %s abandoned - could not read playback state: %v", name, err)
+	runtime.EventsEmit(a.ctx, "command-failed")
+}
+
 func (a *App) PlayPause() {
 	token := a.getToken()
 	playing, err := playback.IsPlaying(token)
 	if err != nil {
+		a.reportCommandFailure("playPause", err)
 		return
 	}
 	if playing {
@@ -54,6 +80,7 @@ func (a *App) ToggleShuffle() {
 	token := a.getToken()
 	shuffled, err := playback.IsShuffled(token)
 	if err != nil {
+		a.reportCommandFailure("shuffle", err)
 		return
 	}
 	a.withDeviceRevival("shuffle", func(token string) error {
@@ -67,6 +94,7 @@ func (a *App) ToggleLoop() {
 	token := a.getToken()
 	current, err := playback.GetRepeatState(token)
 	if err != nil {
+		a.reportCommandFailure("loop", err)
 		return
 	}
 	a.withDeviceRevival("loop", func(token string) error {
@@ -139,7 +167,18 @@ func (a *App) runPlayerCommand(name string, expectTrackChange bool, action func(
 
 	token := a.getToken()
 	err := action(token)
-	if errors.Is(err, playback.ErrNoActiveDevice) && a.reviveDevice(token) {
+	revived, reviveErr := false, error(nil)
+	if errors.Is(err, playback.ErrNoActiveDevice) {
+		revived, reviveErr = a.reviveDevice(token)
+	}
+	if errors.Is(reviveErr, playback.ErrPremiumRequired) {
+		// The transfer named the real reason the command was refused.
+		// "No active device" was the truth about the device and a red
+		// herring about the cause: a Free account can't drive playback
+		// at all, so the retries below would only re-earn the same
+		// answer wearing a less useful error.
+		err = reviveErr
+	} else if revived {
 		// Safe to repeat even for something like NextTrack, which would
 		// skip twice if it half-applied: these are rejections, so
 		// nothing happened to repeat.
@@ -196,13 +235,22 @@ func (a *App) ReportTrackChange(totalMs int, reads int, confirmed bool) {
 }
 
 // reviveDevice transfers playback to an available device without
-// starting it - the retried action decides what happens next. Returns
-// true if a device was found.
-func (a *App) reviveDevice(token string) bool {
+// starting it - the retried action decides what happens next. Reports
+// whether it's worth retrying, and the error the transfer was refused
+// with, if any.
+//
+// That error used to be discarded, which hid the one thing it was best
+// placed to reveal. Transferring is a player command like any other, so
+// a Free account is refused here just as it would be for the original
+// command - but with the refusal thrown away, the retried command kept
+// answering "no active device" and the user was told Spotify wasn't
+// open when the real answer was that the account can't control playback
+// at all.
+func (a *App) reviveDevice(token string) (revived bool, transferErr error) {
 	devices, err := playback.GetDevices(token)
 	if err != nil {
 		logging.Printf("Device revival: could not list devices: %v", err)
-		return false
+		return false, err
 	}
 
 	// An empty list is a different problem from an idle device: nothing
@@ -211,7 +259,7 @@ func (a *App) reviveDevice(token string) bool {
 	// API can't start a closed app - the caller warns instead.
 	if len(devices) == 0 {
 		logging.Printf("Device revival: no devices available - Spotify isn't open anywhere")
-		return false
+		return false, nil
 	}
 
 	target := devices[0]
@@ -222,6 +270,16 @@ func (a *App) reviveDevice(token string) bool {
 		}
 	}
 
-	playback.TransferPlayback(token, target.ID, false)
-	return true
+	if err := playback.TransferPlayback(token, target.ID, false); err != nil {
+		logging.Printf("Device revival: transfer to %q was refused: %v", target.Name, err)
+
+		// Only a flat refusal ends it here. Anything else could just be
+		// the device still coming up, which is precisely what the
+		// caller's retries exist for - so the transfer is still worth
+		// following through on.
+		if errors.Is(err, playback.ErrPremiumRequired) {
+			return false, err
+		}
+	}
+	return true, nil
 }
