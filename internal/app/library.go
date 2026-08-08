@@ -13,12 +13,18 @@ const searchResultLimit = 8
 
 // GetPlaylists lists the current user's playlists, for the playlist
 // picker panel.
-func (a *App) GetPlaylists() []playback.Playlist {
+//
+// The error is returned rather than swallowed into an empty list so the
+// panel can tell a failed load from an account with no playlists - it
+// caches what it gets, and caching a failure pinned the picker to
+// nothing but Liked Songs for the rest of the session.
+func (a *App) GetPlaylists() ([]playback.Playlist, error) {
 	playlists, err := playback.GetPlaylists(a.getToken())
 	if err != nil {
-		return nil
+		logging.Printf("Failed to fetch playlists: %v", err)
+		return nil, err
 	}
-	return playlists
+	return playlists, nil
 }
 
 // PlayPlaylist starts playback of the playlist at uri from the
@@ -69,8 +75,13 @@ func (a *App) PlayTrack(uri string) {
 }
 
 // SaveTrackToLiked adds a track to the current user's Liked Songs.
-func (a *App) SaveTrackToLiked(id string) {
+// Returns the failure as well as logging it: the button turns into a
+// tick on the strength of this call, so swallowing the error left the
+// UI claiming a save that never happened.
+func (a *App) SaveTrackToLiked(id string) error {
 	if err := playback.SaveTrack(a.getToken(), id); err != nil {
 		logging.Printf("Failed to save track: %v", err)
+		return err
 	}
+	return nil
 }

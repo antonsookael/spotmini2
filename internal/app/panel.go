@@ -57,9 +57,9 @@ func (a *App) togglePanel(panel string) {
 	if a.expandedPanel != "" {
 		if !wasExpanded {
 			x, y := runtime.WindowGetPosition(a.ctx)
-			screenHeight := a.currentScreenHeight()
+			_, bottom, ok := a.currentScreenBounds()
 
-			if screenHeight > 0 && y+defaultExpandedHeight > screenHeight {
+			if ok && y+defaultExpandedHeight > bottom {
 				a.openedUpward = true
 				a.setAbsoluteWindowPosition(x, y-(defaultExpandedHeight-collapsedHeight))
 			} else {
@@ -107,8 +107,11 @@ func (a *App) SetPanelHeight(contentHeight int) {
 	}
 
 	target := collapsedHeight + contentHeight
-	if screenHeight := a.currentScreenHeight(); screenHeight > 0 && target > screenHeight {
-		target = screenHeight
+	// Clamped against the monitor's height, not its bottom edge - target
+	// is a window size, and those are only the same number on a display
+	// whose top edge sits at 0.
+	if top, bottom, ok := a.currentScreenBounds(); ok && target > bottom-top {
+		target = bottom - top
 	}
 
 	width, current := runtime.WindowGetSize(a.ctx)

@@ -214,7 +214,13 @@ setInterval(() => {
     render()
   }
 
-  if (totalSeconds > 0 && currentSeconds >= totalSeconds) {
+  // Resync as the track runs out, to pick up whatever Spotify moved on
+  // to. Gated on actually playing, and on a couple of seconds having
+  // passed: the counter stays pinned at the duration once playback
+  // stops at the end of a queue, and nothing resets it, so an
+  // ungated check re-fetched every single second for as long as the app
+  // was left sitting there.
+  if (isCurrentlyPlaying && totalSeconds > 0 && currentSeconds >= totalSeconds && secondsSinceSync >= 2) {
     secondsSinceSync = 0
     fetchNowPlaying()
     return
@@ -289,6 +295,14 @@ function showBarMessage(text, ms) {
 // wording this replaced was silently ellipsized.
 EventsOn('premium-required', () => {
   showBarMessage('Spotify Premium required for playback', 3000)
+})
+
+// The login flow ended without a token - consent refused, port 8888
+// already taken by another copy of the app, or the code exchange
+// rejected. Nothing retries it, so the bar has to say so rather than
+// sitting on "Loading..." looking hung.
+EventsOn('login-failed', () => {
+  showBarMessage('Spotify login failed - restart to retry', 10000)
 })
 
 // Nothing is connected to Spotify Connect - the app is closed rather
@@ -428,9 +442,18 @@ function renderResults(playlists, tracks) {
       // Without stopPropagation this also triggers the row's play.
       saveBtn.addEventListener('click', (e) => {
         e.stopPropagation()
-        SaveTrackToLiked(track.id)
-        saveBtn.textContent = '✓'
+        // Disabled up front so a double-click can't fire twice, but the
+        // tick waits for the call to actually succeed - it used to
+        // appear unconditionally, reporting a save that had 403'd.
         saveBtn.disabled = true
+        SaveTrackToLiked(track.id)
+          .then(() => {
+            saveBtn.textContent = '✓'
+          })
+          .catch(() => {
+            saveBtn.disabled = false
+            showToast('Could not save to Liked Songs', 2000)
+          })
       })
 
       item.appendChild(info)
@@ -476,9 +499,22 @@ async function openPlaylistsPanel() {
 
   if (!allPlaylists) {
     playlistListEl.innerHTML = '<li class="playlist-empty">Loading...</li>'
+
+    let playlists
+    try {
+      playlists = await GetPlaylists()
+    } catch (err) {
+      // Deliberately left uncached so reopening the panel retries.
+      // Caching the failure stuck the picker on Liked Songs alone for
+      // the rest of the session, with no way to reload short of a
+      // restart.
+      playlistListEl.innerHTML = '<li class="playlist-empty">Could not load playlists</li>'
+      return
+    }
+
     // Liked Songs isn't a real playlist, so it's pinned on manually -
     // still searchable like the rest.
-    allPlaylists = [{ name: 'Liked Songs', liked: true }, ...((await GetPlaylists()) || [])]
+    allPlaylists = [{ name: 'Liked Songs', liked: true }, ...(playlists || [])]
   }
   filterPlaylists()
 }

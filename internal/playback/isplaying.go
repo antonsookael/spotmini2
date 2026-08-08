@@ -2,9 +2,6 @@ package playback
 
 import (
 	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
 )
 
 type PlaybackState struct {
@@ -44,29 +41,15 @@ type Show struct {
 }
 
 func IsPlaying(accessToken string) (bool, error) {
-	req, err := http.NewRequest("GET", "https://api.spotify.com/v1/me/player", nil)
-	if err != nil {
-		return false, err
-	}
-
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return false, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
+	body, err := doPlayerGet("https://api.spotify.com/v1/me/player", accessToken)
 	if err != nil {
 		return false, err
 	}
 
 	// If nothing is currently active, Spotify returns an empty body
-	// with a 204 status - there's no JSON to parse in that case.
-	if len(body) == 0 {
-		fmt.Println("No active playback session")
+	// with a 204 status - there's no JSON to parse in that case, and
+	// nothing is playing.
+	if body == nil {
 		return false, nil
 	}
 

@@ -39,16 +39,45 @@ const redirectURI = "http://127.0.0.1:8888/callback"
 const scope = "user-read-playback-state user-modify-playback-state playlist-read-private user-library-read user-library-modify"
 const tokenFile = "token.json"
 
-// tokenChan is how callbackHandler (running inside the temporary auth
-// server) hands the finished token back to GetAccessTokenFull, which is
-// waiting on the other end of this channel.
-var tokenChan = make(chan TokenResponse)
+// loginResult is the outcome of one browser login flow: a token, or the
+// reason the flow ended without one. Both have to travel back to
+// GetAccessTokenFull - a failure that's simply dropped leaves it waiting
+// on a token that can never arrive, which is what used to strand the app
+// with no playback, no error and nothing retrying.
+type loginResult struct {
+	token TokenResponse
+	err   error
+}
+
+// loginChan is how the temporary auth server hands that outcome back to
+// GetAccessTokenFull, which is waiting on the other end of this channel.
+var loginChan = make(chan loginResult, 1)
+
+// reportLogin delivers a login outcome without ever blocking. The
+// buffer takes the first result even if the receiver hasn't arrived
+// yet; the default case drops any later one - a refreshed callback tab,
+// or the server reporting its own shutdown after the token already went
+// through - rather than parking a goroutine on a channel nobody will
+// read again.
+func reportLogin(r loginResult) {
+	select {
+	case loginChan <- r:
+	default:
+	}
+}
 
 // pkceVerifier holds the current login attempt's PKCE verifier between
 // startLogin generating it and callbackHandler using it to complete
 // the token exchange. Fine as a single package-level value since only
 // one login flow ever runs at a time.
 var pkceVerifier string
+
+// loginState is the OAuth state value for the current login attempt:
+// generated fresh, sent to Spotify, and required back unchanged on the
+// callback. PKCE proves the token exchange came from whoever started
+// the login, but says nothing about who called the callback endpoint -
+// without this, /callback completes a flow for any code handed to it.
+var loginState string
 
 type TokenResponse struct {
 	AccessToken  string `json:"access_token"`
@@ -77,21 +106,40 @@ func resolveClientID() {
 func startLogin() {
 	verifier, err := generateCodeVerifier()
 	if err != nil {
-		fmt.Println("Error generating PKCE verifier:", err)
+		reportLogin(loginResult{err: fmt.Errorf("generating PKCE verifier: %w", err)})
+		return
+	}
+	state, err := randomURLSafe()
+	if err != nil {
+		reportLogin(loginResult{err: fmt.Errorf("generating login state: %w", err)})
 		return
 	}
 	pkceVerifier = verifier
+	loginState = state
 
-	authURL := fmt.Sprintf(
-		"https://accounts.spotify.com/authorize?client_id=%s&response_type=code&redirect_uri=%s&scope=%s&code_challenge_method=S256&code_challenge=%s",
-		clientID, redirectURI, scope, codeChallengeFor(verifier),
-	)
+	// Built through url.Values rather than fmt.Sprintf: scope is a
+	// space-separated list, and pasting raw spaces into a query string
+	// only ever worked because browsers quietly repaired it on the way
+	// out. Encode() escapes every value properly.
+	params := url.Values{}
+	params.Set("client_id", clientID)
+	params.Set("response_type", "code")
+	params.Set("redirect_uri", redirectURI)
+	params.Set("scope", scope)
+	params.Set("code_challenge_method", "S256")
+	params.Set("code_challenge", codeChallengeFor(verifier))
+	params.Set("state", state)
+
+	authURL := "https://accounts.spotify.com/authorize?" + params.Encode()
 	fmt.Println("Opening login URL in your browser:")
 	fmt.Println(authURL)
 	openBrowser(authURL)
 
 	mux := http.NewServeMux()
-	server := &http.Server{Addr: ":8888", Handler: mux}
+	// Bound to loopback, not every interface. redirectURI already points
+	// at 127.0.0.1, so nothing needs to reach this from off the machine,
+	// and ":8888" put the endpoint that completes a login on the LAN.
+	server := &http.Server{Addr: "127.0.0.1:8888", Handler: mux}
 
 	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
 		callbackHandler(w, r)
@@ -104,7 +152,16 @@ func startLogin() {
 	})
 
 	fmt.Println("\nListening on http://127.0.0.1:8888 ...")
-	server.ListenAndServe() // blocks until server.Shutdown() is called
+
+	// Blocks until server.Shutdown() is called, which returns
+	// ErrServerClosed - the one outcome that isn't a failure, since it
+	// means the callback already arrived and reported itself. Anything
+	// else (port 8888 held by another copy of the app, most often) means
+	// the callback can never arrive, so the wait has to be ended here
+	// rather than left hanging on a server that isn't running.
+	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		reportLogin(loginResult{err: fmt.Errorf("callback server on %s: %w", server.Addr, err)})
+	}
 }
 
 // RefreshToken trades a refresh token for a brand new access token,
@@ -170,7 +227,11 @@ func saveToken(token TokenResponse) {
 		logging.Printf("Error resolving token file path: %v", err)
 		return
 	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	// 0600, not 0644: this file holds the refresh token, which is a
+	// standing credential for the account until it's revoked. Enforced
+	// on macOS; on Windows the ACL inherited from %AppData% is what
+	// actually applies.
+	if err := os.WriteFile(path, data, 0600); err != nil {
 		logging.Printf("Error writing token file: %v", err)
 	}
 }
@@ -223,10 +284,16 @@ func refreshWhenReachable(refresh string) (TokenResponse, error) {
 
 // GetAccessTokenFull is the single entry point the app calls on startup:
 // try a saved token first, refresh if possible, otherwise fall back to a
-// full browser login and wait for the result on tokenChan. Returns the
+// full browser login and wait for the result on loginChan. Returns the
 // full TokenResponse since the caller needs the refresh token too, for
 // the ongoing background refresh loop.
-func GetAccessTokenFull() TokenResponse {
+//
+// The error is what a login that ends without a token looks like -
+// consent refused, the callback server unable to listen, the code
+// exchange rejected. There's no retry here: the caller reports it and
+// the user relaunches, which is better than the previous behaviour of
+// blocking forever on a token nothing was going to send.
+func GetAccessTokenFull() (TokenResponse, error) {
 	resolveClientID()
 
 	saved, err := loadToken()
@@ -238,11 +305,13 @@ func GetAccessTokenFull() TokenResponse {
 		logging.Printf("Found saved token, refreshing instead of logging in again...")
 		newToken, err := refreshWhenReachable(saved.RefreshToken)
 		if err == nil {
-			return newToken
+			return newToken, nil
 		}
 		logging.Printf("Refresh failed, falling back to full login: %v", err)
 	}
 
 	go startLogin()
-	return <-tokenChan // blocks here until callbackHandler sends one
+
+	result := <-loginChan // blocks here until the flow reports an outcome
+	return result.token, result.err
 }

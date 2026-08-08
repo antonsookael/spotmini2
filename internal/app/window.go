@@ -187,14 +187,32 @@ func (a *App) currentScreen() (runtime.Screen, bool) {
 	return screens[0], true
 }
 
-// currentScreenHeight returns the logical height of the screen the window
-// currently sits on, or 0 if it can't be determined.
-func (a *App) currentScreenHeight() int {
-	screen, ok := a.currentScreen()
-	if !ok {
-		return 0
+// currentScreenBounds returns the top and bottom edges of the monitor
+// the window sits on, in the same coordinate space WindowGetPosition
+// reports in.
+//
+// Panel placement needs the real edges rather than just a height:
+// deciding whether an expanded panel fits below the window means
+// comparing an absolute y against an absolute bottom, and the screen
+// *size* only doubles as that on a monitor whose top edge is 0. On a
+// second display the old comparison either opened the panel off the
+// bottom of the screen or flipped it upward with room to spare.
+func (a *App) currentScreenBounds() (top, bottom int, ok bool) {
+	x, y := runtime.WindowGetPosition(a.ctx)
+	width, height := runtime.WindowGetSize(a.ctx)
+
+	if _, monTop, _, monBottom, found := monitorBoundsAt(x+width/2, y+height/2); found {
+		return monTop, monBottom, true
 	}
-	return screen.Size.Height
+
+	// No native bounds available (Linux, or the lookup failed). Falling
+	// back to Wails' screen size assumes the display sits at the desktop
+	// origin - the same assumption every other fallback here makes.
+	screen, found := a.currentScreen()
+	if !found {
+		return 0, 0, false
+	}
+	return 0, screen.Size.Height, true
 }
 
 // SnapWindowToEdges snaps the window flush against a nearby screen
@@ -203,6 +221,23 @@ func (a *App) currentScreenHeight() int {
 func (a *App) SnapWindowToEdges() {
 	x, y := runtime.WindowGetPosition(a.ctx)
 	a.snapToEdges(x, y)
+}
+
+// withinSnap reports whether a window-to-edge gap is small enough to
+// snap across. It's a distance, so the sign has to go: a negative gap
+// means the window overhangs that edge, and a bare `gap <= threshold`
+// treats every overhang as snappable no matter how far out it is.
+//
+// That undid the two things the rest of this file goes out of its way
+// to allow - clampToScreen's deliberate off-screen tuck was yanked
+// flush on every mouseup, and a window dragged near the bottom with a
+// panel open (taller than collapsedHeight, which is all clampToScreen
+// keeps on-screen) jumped up by the difference.
+func withinSnap(gap int) bool {
+	if gap < 0 {
+		gap = -gap
+	}
+	return gap <= snapThreshold
 }
 
 // snapToEdges moves the window flush against any screen edge it's
@@ -225,15 +260,15 @@ func (a *App) snapToEdges(x, y int) {
 
 	snappedX, snappedY := x, y
 
-	if x-left <= snapThreshold {
+	if withinSnap(x - left) {
 		snappedX = left
-	} else if right-(x+width) <= snapThreshold {
+	} else if withinSnap(right - (x + width)) {
 		snappedX = right - width
 	}
 
-	if y-top <= snapThreshold {
+	if withinSnap(y - top) {
 		snappedY = top
-	} else if bottom-(y+height) <= snapThreshold {
+	} else if withinSnap(bottom - (y + height)) {
 		snappedY = bottom - height
 	}
 

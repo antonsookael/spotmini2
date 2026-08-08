@@ -1,10 +1,12 @@
 package app
 
 import (
+	"errors"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"spotmini-gui/internal/logging"
 	"spotmini-gui/internal/playback"
 )
 
@@ -50,7 +52,7 @@ func (a *App) adjustVolume(delta int) {
 	current := a.lastVolume
 	if time.Since(a.lastVolumeAt) >= volumeCacheWindow {
 		var err error
-		current, err = playback.GetVolume(token)
+		current, err = a.currentVolume(token)
 		if err != nil {
 			return
 		}
@@ -69,4 +71,41 @@ func (a *App) adjustVolume(delta int) {
 	a.lastVolume = applied
 	a.lastVolumeAt = time.Now()
 	runtime.EventsEmit(a.ctx, "volume-changed", applied)
+}
+
+// currentVolume reads the active device's volume, reviving a device
+// first if the only reason there's nothing to read is that Spotify
+// dropped the active one for being idle.
+//
+// Reviving here rather than leaving it to the SetVolume call below is
+// what makes the volume hotkeys work at all on an idle device. The
+// change is relative, so it needs a starting point, and /me/player
+// answers 204 with no body until something is active again - which used
+// to be read as "currently 0", turning a Vol+ press into "set the
+// volume to one step" and dropping a device that had been at 70% to
+// 10% the moment the retry landed on it.
+func (a *App) currentVolume(token string) (int, error) {
+	volume, err := playback.GetVolume(token)
+	if !errors.Is(err, playback.ErrNoActiveDevice) {
+		return volume, err
+	}
+
+	if !a.reviveDevice(token) {
+		// Nothing connected to revive, so say so rather than leaving the
+		// keypress looking ignored - the same warning the playback
+		// commands give in this situation.
+		runtime.EventsEmit(a.ctx, "no-device")
+		return 0, err
+	}
+
+	// The transfer isn't instant, so the same backoff withDeviceRevival
+	// uses applies to reading the volume back off the revived device.
+	for _, delay := range revivalRetryDelays {
+		time.Sleep(delay)
+		if volume, err = playback.GetVolume(token); err == nil {
+			return volume, nil
+		}
+	}
+	logging.Printf("Could not read volume after device revival: %v", err)
+	return 0, err
 }

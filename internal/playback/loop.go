@@ -3,8 +3,6 @@ package playback
 import (
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 )
 
 type repeatStateResponse struct {
@@ -14,27 +12,14 @@ type repeatStateResponse struct {
 // GetRepeatState reads Spotify's current repeat mode: "off", "context"
 // (repeat the whole playlist/album), or "track" (repeat just this song).
 func GetRepeatState(accessToken string) (string, error) {
-	req, err := http.NewRequest("GET", "https://api.spotify.com/v1/me/player", nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
+	body, err := doPlayerGet("https://api.spotify.com/v1/me/player", accessToken)
 	if err != nil {
 		return "", err
 	}
 
-	// Same edge case as IsPlaying/IsShuffled - empty body means no
-	// active session, which is as good as "off".
-	if len(body) == 0 {
+	// Same edge case as IsPlaying/IsShuffled - no body means no active
+	// session, which is as good as "off".
+	if body == nil {
 		return "off", nil
 	}
 

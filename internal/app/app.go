@@ -93,16 +93,29 @@ func (a *App) startup(ctx context.Context) {
 	a.restoreWindowPosition()
 
 	go func() {
-		token := backend.GetAccessTokenFull()
+		token, err := backend.GetAccessTokenFull()
+		if err != nil {
+			// Nothing here can recover: there's no token, so every
+			// playback call would fail, and the login flow has already
+			// ended. Saying so in the bar is the whole point - the app
+			// otherwise sits on "Loading..." forever, looking hung.
+			logging.Printf("Login failed: %v", err)
+			runtime.EventsEmit(a.ctx, "login-failed")
+			return
+		}
+
 		a.setTokens(token.AccessToken, token.RefreshToken, token.ExpiresIn)
 		runtime.EventsEmit(a.ctx, "logged-in")
 
 		a.startTokenRefreshLoop()
 	}()
 
-	// Hotkeys MUST be registered on the thread startup() runs on.
-	// On macOS this has to be the OS main thread, or the OS never
-	// delivers key events to it even though Register() reports success.
+	// Registration is deliberately not pinned to this goroutine: on
+	// macOS golang.design/x/hotkey dispatches the CGEventTap setup onto
+	// the main queue itself and attaches the source to CFRunLoopGetMain,
+	// so events arrive no matter which goroutine called Register. That's
+	// what lets SetHotkeyBinding re-register later from a Wails binding
+	// call, which runs on a goroutine of its own.
 	a.hotkeyConfig = hotkeys.LoadConfig()
 	for _, action := range hotkeys.Actions {
 		binding, _ := a.hotkeyConfig.Binding(action)

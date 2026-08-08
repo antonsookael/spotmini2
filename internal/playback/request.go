@@ -27,6 +27,54 @@ var ErrNoActiveDevice = errors.New("no active device")
 // accounts outright, regardless of device state.
 var ErrPremiumRequired = errors.New("spotify premium required")
 
+// doPlayerGet issues a read against the player API and returns the raw
+// response body, or a nil body for the 204 Spotify answers with when
+// nothing is active at all.
+//
+// The status check is the whole point of routing every read through
+// here. Spotify's error responses are valid JSON, just not the shape
+// the caller is unmarshaling into, so one of those lands as a
+// zero-valued struct with no error at all - a 429 read as "not
+// playing", or as "volume 0". Every read endpoint has to tell those
+// apart, and none of them can do it by looking at the body alone.
+func doPlayerGet(url, accessToken string) ([]byte, error) {
+	action := "GET " + strings.TrimPrefix(url, apiPrefix)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		logging.Printf("[spotify] %s -> %v", action, err)
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		// %s rather than as the format string: a response body can
+		// contain a stray % that would otherwise be read as a verb.
+		logging.Printf("%s", fmt.Sprintf("[spotify] %s -> %d %s", action, resp.StatusCode, string(body)))
+		return nil, fmt.Errorf("%s: spotify returned status %d: %s", action, resp.StatusCode, string(body))
+	}
+
+	// Distinguished from a body the caller can parse, rather than
+	// handed back as an empty slice - "nothing is active" means
+	// something different to each caller, so each one decides.
+	if len(body) == 0 {
+		return nil, nil
+	}
+	return body, nil
+}
+
 // doPlayerRequest issues a request against the Spotify player API and
 // translates a "no active device" response into ErrNoActiveDevice, so
 // callers can tell that failure apart from any other kind and react to

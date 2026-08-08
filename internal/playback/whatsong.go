@@ -2,8 +2,6 @@ package playback
 
 import (
 	"encoding/json"
-	"io"
-	"net/http"
 )
 
 // NowPlaying fetches the current playback state, including the track
@@ -19,26 +17,14 @@ import (
 // a backwards-compatibility quirk for clients that only ever expected
 // tracks.
 func NowPlaying(accessToken string) (PlaybackState, error) {
-	req, err := http.NewRequest("GET", "https://api.spotify.com/v1/me/player?additional_types=track,episode", nil)
+	body, err := doPlayerGet("https://api.spotify.com/v1/me/player?additional_types=track,episode", accessToken)
 	if err != nil {
 		return PlaybackState{}, err
 	}
 
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return PlaybackState{}, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return PlaybackState{}, err
-	}
-
-	if len(body) == 0 {
+	// Same edge case as IsPlaying - no body means no active session,
+	// which the caller reads as nothing playing.
+	if body == nil {
 		return PlaybackState{}, nil
 	}
 

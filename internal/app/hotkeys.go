@@ -80,13 +80,23 @@ func (a *App) GetHotkeyConfig() hotkeys.HotkeyConfig {
 // The previous binding stays active if the new one won't register.
 func (a *App) SetHotkeyBinding(action string, mods []string, key string) error {
 	a.hotkeyMu.Lock()
-	if _, ok := a.hotkeyConfig.Binding(action); !ok {
-		a.hotkeyMu.Unlock()
+	current, ok := a.hotkeyConfig.Binding(action)
+	a.hotkeyMu.Unlock()
+	if !ok {
 		return fmt.Errorf("unknown hotkey action %q", action)
 	}
-	a.hotkeyMu.Unlock()
 
 	binding := hotkeys.HotkeyBinding{Mods: mods, Key: key}
+
+	// Rebinding an action to the combo it already holds has to
+	// short-circuit, not go through applyHotkey: that registers the new
+	// hotkey before releasing the old one, and the OS refuses the
+	// duplicate while the original is still held - so confirming a
+	// binding unchanged came back as "could not set hotkey".
+	if current.Equals(binding) {
+		return nil
+	}
+
 	if err := a.applyHotkey(action, binding); err != nil {
 		return err
 	}

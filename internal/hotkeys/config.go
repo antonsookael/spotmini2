@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 
 	"golang.design/x/hotkey"
 
@@ -13,6 +14,14 @@ import (
 type HotkeyBinding struct {
 	Mods []string `json:"mods"`
 	Key  string   `json:"key"`
+}
+
+// Equals reports whether two bindings describe the same combo.
+// Modifier order is compared as-is rather than as a set: every binding
+// is either a default or comes from the recorder, and both emit
+// modifiers in the same fixed order.
+func (b HotkeyBinding) Equals(other HotkeyBinding) bool {
+	return b.Key == other.Key && slices.Equal(b.Mods, other.Mods)
 }
 
 type HotkeyConfig struct {

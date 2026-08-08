@@ -324,12 +324,37 @@
       const winBlock = document.getElementById('win')
       const toggle = document.getElementById('toggle')
 
+      // Filled in by the release lookup below. Until then - or if it
+      // fails - the button keeps its static link to the releases page.
+      const assets = { mac: null, win: null }
+
       let showingMac = isMac
       function applyOS() {
         macBlock.classList.toggle('show', showingMac)
         winBlock.classList.toggle('show', !showingMac)
         toggle.textContent = showingMac ? 'Using Windows?' : 'Using macOS?'
+        applyDownloads()
       }
+
+      // Follows the toggle rather than the detected OS. Someone who
+      // switched to the Windows instructions wants the Windows build,
+      // and the download links were the one thing the toggle didn't
+      // change - so it offered a .zip for macOS underneath a set of
+      // Windows steps.
+      function applyDownloads() {
+        const mine = showingMac ? assets.mac : assets.win
+        const other = showingMac ? assets.win : assets.mac
+
+        if (mine) {
+          const btn = document.getElementById('download')
+          btn.href = mine.browser_download_url
+          btn.textContent = `Download for ${showingMac ? 'macOS' : 'Windows'}`
+        }
+        document.getElementById('alt').innerHTML = other
+          ? `<a href="${other.browser_download_url}">Download for ${showingMac ? 'Windows' : 'macOS'}</a>`
+          : ''
+      }
+
       toggle.addEventListener('click', () => { showingMac = !showingMac; applyOS() })
       applyOS()
 
@@ -342,20 +367,13 @@
         .then((release) => {
           const find = (suffix) =>
             (release.assets || []).find((a) => a.name.endsWith(suffix))
-          const mac = find('mac.zip')
-          const win = find('win.exe')
-          const mine = isMac ? mac : win
-          const other = isMac ? win : mac
+          assets.mac = find('mac.zip')
+          assets.win = find('win.exe')
 
-          if (mine) {
-            const btn = document.getElementById('download')
-            btn.href = mine.browser_download_url
-            btn.textContent = `Download for ${isMac ? 'macOS' : 'Windows'}`
-          }
-          if (other) {
-            document.getElementById('alt').innerHTML =
-              `<a href="${other.browser_download_url}">Download for ${isMac ? 'Windows' : 'macOS'}</a>`
-          }
+          // Same function the toggle calls, so the links are built one
+          // way whether they're being set up or switched over.
+          applyDownloads()
+
           if (release.tag_name) {
             document.getElementById('version').textContent = release.tag_name
           }

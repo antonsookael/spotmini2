@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 )
 
 type Device struct {
@@ -25,22 +23,16 @@ type devicesResponse struct {
 // idle. Unlike /me/player, this endpoint always returns data (never an
 // empty 204 body) as long as at least one device has connected recently.
 func GetDevices(accessToken string) ([]Device, error) {
-	req, err := http.NewRequest("GET", "https://api.spotify.com/v1/me/player/devices", nil)
+	// Routed through doPlayerGet for its status check: an error
+	// response unmarshals into an empty Devices list, which reads as
+	// "Spotify isn't open anywhere" - a wrong and confusing thing to
+	// tell the user when the real problem was a 429 or an expired token.
+	body, err := doPlayerGet("https://api.spotify.com/v1/me/player/devices", accessToken)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
+	if body == nil {
+		return nil, nil
 	}
 
 	var parsed devicesResponse

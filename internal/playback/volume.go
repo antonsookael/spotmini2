@@ -3,8 +3,6 @@ package playback
 import (
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 )
 
 type volumeResponse struct {
@@ -13,30 +11,21 @@ type volumeResponse struct {
 	} `json:"device"`
 }
 
-// GetVolume reads the active device's current volume (0-100).
+// GetVolume reads the active device's volume (0-100), or
+// ErrNoActiveDevice if there's no active session to read one from.
+//
+// That case is an error rather than a plain 0 because the caller
+// adjusts *relative* to what comes back: reporting an unknown volume as
+// 0 turned "raise the volume" into "set the volume to one step", which
+// slammed a device sitting at 70% down to 10% as soon as it was
+// revived.
 func GetVolume(accessToken string) (int, error) {
-	req, err := http.NewRequest("GET", "https://api.spotify.com/v1/me/player", nil)
+	body, err := doPlayerGet("https://api.spotify.com/v1/me/player", accessToken)
 	if err != nil {
 		return 0, err
 	}
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return 0, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return 0, err
-	}
-
-	// Same edge case as IsPlaying/IsShuffled - empty body means no
-	// active session, so there's no device volume to report.
-	if len(body) == 0 {
-		return 0, nil
+	if body == nil {
+		return 0, ErrNoActiveDevice
 	}
 
 	var state volumeResponse

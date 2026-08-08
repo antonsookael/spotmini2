@@ -13,6 +13,13 @@ import (
 // exchange, so Spotify can confirm the code exchange came from
 // whoever started this specific login.
 func generateCodeVerifier() (string, error) {
+	return randomURLSafe()
+}
+
+// randomURLSafe returns 32 bytes of cryptographically random data as an
+// unpadded base64url string - the shape both the PKCE verifier and the
+// OAuth state value need, neither of which may be guessable.
+func randomURLSafe() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", err

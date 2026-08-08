@@ -2,8 +2,6 @@ package playback
 
 import (
 	"encoding/json"
-	"io"
-	"net/http"
 )
 
 type ShuffleStateResponse struct {
@@ -11,27 +9,13 @@ type ShuffleStateResponse struct {
 }
 
 func IsShuffled(accessToken string) (bool, error) {
-	req, err := http.NewRequest("GET", "https://api.spotify.com/v1/me/player", nil)
+	body, err := doPlayerGet("https://api.spotify.com/v1/me/player", accessToken)
 	if err != nil {
 		return false, err
 	}
 
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return false, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return false, err
-	}
-
-	// Same edge case as isPlaying - empty body means no active session.
-	if len(body) == 0 {
+	// Same edge case as IsPlaying - no body means no active session.
+	if body == nil {
 		return false, nil
 	}
 
