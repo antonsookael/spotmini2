@@ -1,7 +1,6 @@
 package app
 
 import (
-	"fmt"
 	"time"
 
 	"spotmini-gui/internal/backend"
@@ -46,20 +45,31 @@ func (a *App) getToken() string {
 	if newToken.RefreshToken != "" {
 		a.refreshTok = newToken.RefreshToken
 	}
-	a.tokenExpiresAt = time.Now().Add(time.Duration(newToken.ExpiresIn) * time.Second)
-	fmt.Println("Access token refreshed on demand")
+	a.tokenExpiresAt = newToken.ExpiresAt
+	// To the log file, not just stdout: a built app has no console, and
+	// a refresh is infrequent enough to be worth a line - it's the thing
+	// that goes quiet first when auth starts failing.
+	logging.Printf("Access token refreshed on demand")
 
 	return a.accessToken
 }
 
-func (a *App) setTokens(access, refresh string, expiresIn int) {
+// setTokens takes the whole TokenResponse rather than its pieces so the
+// expiry comes from the token itself.
+//
+// It used to be recomputed here as now+ExpiresIn, which is only right
+// for a token minted this instant. A saved token reused at startup was
+// issued at some earlier point, so that arithmetic would have dated it
+// from launch and left getToken believing a nearly-dead token had a full
+// hour on it.
+func (a *App) setTokens(t backend.TokenResponse) {
 	a.tokenMu.Lock()
 	defer a.tokenMu.Unlock()
-	a.accessToken = access
-	if refresh != "" {
-		a.refreshTok = refresh
+	a.accessToken = t.AccessToken
+	if t.RefreshToken != "" {
+		a.refreshTok = t.RefreshToken
 	}
-	a.tokenExpiresAt = time.Now().Add(time.Duration(expiresIn) * time.Second)
+	a.tokenExpiresAt = t.ExpiresAt
 }
 
 // startTokenRefreshLoop refreshes every 50 minutes so calls rarely
@@ -84,7 +94,7 @@ func (a *App) startTokenRefreshLoop() {
 			continue
 		}
 
-		a.setTokens(newToken.AccessToken, newToken.RefreshToken, newToken.ExpiresIn)
-		fmt.Println("Access token refreshed in background")
+		a.setTokens(newToken)
+		logging.Printf("Access token refreshed in background")
 	}
 }

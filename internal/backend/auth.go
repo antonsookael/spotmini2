@@ -84,6 +84,31 @@ type TokenResponse struct {
 	TokenType    string `json:"token_type"`
 	ExpiresIn    int    `json:"expires_in"`
 	RefreshToken string `json:"refresh_token"`
+
+	// ExpiresAt is ours, not Spotify's. Spotify only says how many
+	// seconds the token lasts, which stops meaning anything the moment
+	// it's written to disk - a saved file could say "3600 seconds" and
+	// be a week old. Stamping the instant it actually expires is what
+	// lets a later launch tell whether the token is still usable
+	// instead of refreshing unconditionally to find out.
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// tokenValidityMargin is how much life a saved access token needs left
+// before startup will use it as-is. Comfortably more than getToken's own
+// refresh buffer, so a token accepted here doesn't turn around and need
+// refreshing on the first playback call anyway.
+const tokenValidityMargin = 5 * time.Minute
+
+// stillValid reports whether a saved token can be used as it stands.
+//
+// A zero ExpiresAt means the file predates this field, so there's
+// nothing to judge it by and refreshing is the safe answer - which is
+// also the migration path, since the refreshed token gets stamped.
+func (t TokenResponse) stillValid() bool {
+	return t.AccessToken != "" &&
+		!t.ExpiresAt.IsZero() &&
+		time.Now().Add(tokenValidityMargin).Before(t.ExpiresAt)
 }
 
 // resolveClientID lets a Client ID be overridden via .env/environment
@@ -221,6 +246,11 @@ func exchangeForToken(data url.Values) (TokenResponse, error) {
 		return TokenResponse{}, fmt.Errorf("parsing response: %w (raw: %s)", err, string(body))
 	}
 
+	// Stamped here rather than at the call sites: every token in the
+	// app - login and refresh alike - comes through this one function,
+	// so this is the only place that knows the countdown started now.
+	token.ExpiresAt = time.Now().Add(time.Duration(token.ExpiresIn) * time.Second)
+
 	return token, nil
 }
 
@@ -309,10 +339,19 @@ func GetAccessTokenFull() (TokenResponse, error) {
 		logging.Printf("No saved token found (%v) - starting full login", err)
 	} else if saved.RefreshToken == "" {
 		logging.Printf("Saved token has no refresh token - starting full login")
+	} else if saved.stillValid() {
+		// The common case, and deliberately silent: it happens on every
+		// launch inside the token's lifetime, and a line saying nothing
+		// happened is exactly the bulk this log is meant not to have.
+		return saved, nil
 	} else {
-		logging.Printf("Found saved token, refreshing instead of logging in again...")
 		newToken, err := refreshWhenReachable(saved.RefreshToken)
 		if err == nil {
+			// Logged on the way out rather than on the way in, so the
+			// line records something that actually happened. The old
+			// "refreshing instead of logging in again" was written
+			// before the attempt and told you nothing about how it went.
+			logging.Printf("Saved token had expired - refreshed it")
 			return newToken, nil
 		}
 		logging.Printf("Refresh failed, falling back to full login: %v", err)

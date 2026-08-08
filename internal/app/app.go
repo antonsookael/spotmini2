@@ -110,7 +110,7 @@ func (a *App) startup(ctx context.Context) {
 			return
 		}
 
-		a.setTokens(token.AccessToken, token.RefreshToken, token.ExpiresIn)
+		a.setTokens(token)
 		runtime.EventsEmit(a.ctx, "logged-in")
 
 		a.startTokenRefreshLoop()
