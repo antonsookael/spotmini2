@@ -39,7 +39,15 @@
 
       /* --- Header --- */
       header { display: flex; align-items: center; gap: 12px; }
-      header img { width: 44px; height: 44px; border-radius: 10px; }
+      /* The icon's own background is --bg, so without an outline its
+         square disappears into the page and the bars appear to float.
+         Deliberately lighter than --line: the cards using that also
+         have a lifted background to define them, and at 1px against
+         --bg it's too faint to read on its own. */
+      header img {
+        width: 44px; height: 44px; border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+      }
       h1 { font-size: 22px; font-weight: 400; letter-spacing: -0.2px; }
       .tagline { color: var(--muted); font-size: 13px; margin-top: 2px; }
 
