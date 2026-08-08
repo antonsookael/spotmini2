@@ -31,7 +31,14 @@ const (
 	minWindowWidth = 150
 
 	collapsedHeight = 50
-	expandedHeight  = 355
+
+	// Sized against the settings panel's full content at windowWidth:
+	// every row with the gradient picker showing, plus the hotkey
+	// summary and version line. Auto-fit can leave the window narrower
+	// than that, which wraps the summary onto more lines than this
+	// covers - the panel scrolls in that case rather than growing, since
+	// the height can't track the width.
+	expandedHeight = 390
 )
 
 // App holds the shared state behind every frontend-callable method.

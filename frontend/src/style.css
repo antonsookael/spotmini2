@@ -411,7 +411,10 @@ body {
 #app-version {
   margin-top: 8px;
   font-size: 10px;
-  color: #757575;
+  /* Same treatment as #hotkey-summary above it: a fixed grey stops
+     adapting once the background is customised to something light. */
+  color: var(--fg);
+  opacity: 0.6;
 }
 
 .hotkey-btn {
