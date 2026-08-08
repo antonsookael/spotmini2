@@ -655,7 +655,19 @@ let dragStartWinX = 0
 let dragStartWinY = 0
 
 nowPlayingEl.addEventListener('mousedown', async (e) => {
-  if (e.button !== 0 || e.target.closest('#settings-toggle-btn') || e.target.closest('#playlists-toggle-btn') || e.target.closest('#close-btn') || e.target.closest('#track-info')) return
+  // #track-info is only spared when it's actually a link. The class is
+  // kept in step with currentSpotifyURI by render(), so with nothing
+  // playing - no track, no URI, nothing to open - the title stops being
+  // an exception and becomes part of the drag handle like the rest of
+  // the bar. Excluding it unconditionally meant the one state with no
+  // click to protect was the state with almost nowhere left to grab.
+  if (
+    e.button !== 0 ||
+    e.target.closest('#settings-toggle-btn') ||
+    e.target.closest('#playlists-toggle-btn') ||
+    e.target.closest('#close-btn') ||
+    e.target.closest('#track-info.clickable')
+  ) return
 
   dragStartMouseX = e.screenX
   dragStartMouseY = e.screenY

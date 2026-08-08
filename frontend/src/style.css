@@ -100,12 +100,29 @@ body {
   50% { opacity: 0.35; }
 }
 
+/* Sized to its text (0 1 auto), not stretched across the bar (1). The
+   title is the one thing in here that isn't a drag handle - it's a link
+   to the track - so every pixel it claims beyond its own text is a
+   pixel the window can't be picked up by. At "Nothing playing" that was
+   most of the bar. It still shrinks and ellipsizes when the text
+   genuinely outgrows the space. */
 #track-info {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Absorbs whatever the title doesn't need, keeping the timer and
+   buttons hard right. Stretched to the full bar height rather than left
+   at an empty span's line box, since its entire job is to be a hit
+   target. A zero flex-basis keeps it out of the way when the title is
+   long enough to need shrinking. */
+#drag-space {
+  flex: 1 1 0;
+  min-width: 0;
+  align-self: stretch;
 }
 
 #track-info.clickable {
