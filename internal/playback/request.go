@@ -35,6 +35,39 @@ func took(start time.Time) time.Duration {
 	return time.Since(start).Round(time.Millisecond)
 }
 
+// reasonError turns a rejection carrying one of Spotify's player
+// "reason" codes into the matching sentinel, or nil when it isn't one
+// the app can do anything about.
+//
+// Shared by reads and writes on purpose. It used to be inline in
+// doPlayerRequest, which meant only writes could ever produce these -
+// a read refused for the same cause came back as a generic error, so
+// the callers that check for ErrPremiumRequired could never see one
+// and reported "request failed, check the log" for an account that
+// simply isn't Premium.
+func reasonError(status int, body []byte) error {
+	if status != http.StatusNotFound && status != http.StatusForbidden {
+		return nil
+	}
+
+	var parsed struct {
+		Error struct {
+			Reason string `json:"reason"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(body, &parsed) != nil {
+		return nil
+	}
+
+	switch parsed.Error.Reason {
+	case "NO_ACTIVE_DEVICE":
+		return ErrNoActiveDevice
+	case "PREMIUM_REQUIRED":
+		return ErrPremiumRequired
+	}
+	return nil
+}
+
 // doPlayerGet issues a read against the player API and returns the raw
 // response body, or a nil body for the 204 Spotify answers with when
 // nothing is active at all.
@@ -72,6 +105,14 @@ func doPlayerGet(url, accessToken string) ([]byte, error) {
 		// %s rather than as the format string: a response body can
 		// contain a stray % that would otherwise be read as a verb.
 		logging.Printf("%s", fmt.Sprintf("[spotify] %s -> %d %s in %s", action, resp.StatusCode, string(body), took(start)))
+
+		// Same classification writes get: a read refused because the
+		// account isn't Premium has to reach the caller as
+		// ErrPremiumRequired, or it can only be reported as an
+		// unexplained failure.
+		if reason := reasonError(resp.StatusCode, body); reason != nil {
+			return nil, reason
+		}
 		return nil, fmt.Errorf("%s: spotify returned status %d: %s", action, resp.StatusCode, string(body))
 	}
 
@@ -138,20 +179,8 @@ func doPlayerRequest(method, url, accessToken string, body io.Reader) error {
 	// contain a stray % that would otherwise be read as a verb.
 	logging.Printf("%s", line)
 
-	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusForbidden {
-		var parsed struct {
-			Error struct {
-				Reason string `json:"reason"`
-			} `json:"error"`
-		}
-		if json.Unmarshal(respBody, &parsed) == nil {
-			switch parsed.Error.Reason {
-			case "NO_ACTIVE_DEVICE":
-				return ErrNoActiveDevice
-			case "PREMIUM_REQUIRED":
-				return ErrPremiumRequired
-			}
-		}
+	if reason := reasonError(resp.StatusCode, respBody); reason != nil {
+		return reason
 	}
 
 	// Carries the endpoint so callers that only surface the error - like
