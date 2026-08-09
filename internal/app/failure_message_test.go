@@ -16,7 +16,7 @@ func TestFailureMessageNamesEveryCause(t *testing.T) {
 		want string
 	}{
 		{"unreachable", fmt.Errorf("%w: dial tcp", playback.ErrUnreachable), "No connection to Spotify"},
-		{"auth", playback.ErrAuthExpired, "Spotify sign-in expired - restart app"},
+		{"auth", playback.ErrAuthExpired, "Spotify sign-in expired - signing in again"},
 		{"rate limited", playback.ErrRateLimited, "Too many requests - wait a moment"},
 		{"down", playback.ErrSpotifyDown, "Spotify is down - try again later"},
 		{"status", &playback.StatusError{Status: 418}, "Spotify error 418 - try again"},

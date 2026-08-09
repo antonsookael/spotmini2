@@ -51,10 +51,12 @@ func failureMessage(err error) string {
 	case errors.Is(err, playback.ErrUnreachable):
 		return "No connection to Spotify"
 	case errors.Is(err, playback.ErrAuthExpired):
-		// Only reaches the bar once a refresh has already been tried and
-		// failed, so the login genuinely needs redoing - which restarting
-		// does, by falling through to the browser flow.
-		return "Spotify sign-in expired - restart app"
+		// Only reaches the bar once a refresh has already been tried, so
+		// the login genuinely needs redoing - and reauthorize is already
+		// off doing it. It used to advise a restart, which relaunches
+		// into the same refresh that keeps succeeding and the same
+		// rejection behind it.
+		return "Spotify sign-in expired - signing in again"
 	case errors.Is(err, playback.ErrRateLimited):
 		return "Too many requests - wait a moment"
 	case errors.Is(err, playback.ErrSpotifyDown):
@@ -227,6 +229,13 @@ func (a *App) runPlayerCommand(name string, expectTrackChange bool, action func(
 	if errors.Is(err, playback.ErrAuthExpired) && a.refresh(token) {
 		token = a.getToken()
 		err = action(token)
+	}
+	// Still rejected - either the refresh failed, or it worked and the
+	// brand new token was turned away just the same. Refreshing has
+	// nothing left to offer either way, so start a fresh login rather
+	// than leave the user restarting into an identical state.
+	if errors.Is(err, playback.ErrAuthExpired) {
+		a.reauthorize()
 	}
 
 	revived, reviveErr := false, error(nil)

@@ -409,8 +409,43 @@ func GetAccessTokenFull() (TokenResponse, error) {
 		logging.Printf("Refresh failed, falling back to full login: %v", err)
 	}
 
+	return Login()
+}
+
+// Login runs the browser consent flow and returns its outcome.
+//
+// Exported so a login can be started mid-session rather than only at
+// launch. A token whose *grant* Spotify has stopped honouring cannot be
+// repaired by refreshing it - a refresh only ever hands back the same
+// grant - so asking for consent again is the only way out of that, and
+// the app has to be able to do it without being relaunched.
+func Login() (TokenResponse, error) {
+	resolveClientID()
+
+	// A previous flow can leave an answer nobody collected - the
+	// abandonment timer firing just after the callback landed, say.
+	// Clearing it first means this login waits for its own result rather
+	// than returning the last one the instant it starts.
+	select {
+	case <-loginChan:
+	default:
+	}
+
 	go startLogin()
 
 	result := <-loginChan // blocks here until the flow reports an outcome
 	return result.token, result.err
+}
+
+// ForgetToken deletes the saved token, so the next launch starts from
+// consent instead of from a credential Spotify has stopped accepting.
+func ForgetToken() error {
+	path, err := paths.ConfigFile(tokenFile)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }

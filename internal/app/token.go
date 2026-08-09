@@ -4,6 +4,8 @@ import (
 	"errors"
 	"time"
 
+	"github.com/wailsapp/wails/v2/pkg/runtime"
+
 	"spotmini-gui/internal/backend"
 	"spotmini-gui/internal/logging"
 	"spotmini-gui/internal/playback"
@@ -123,9 +125,18 @@ func retryOnAuthFailure[T any](a *App, read func(token string) (T, error)) (T, e
 		return value, err
 	}
 	if !a.refresh(token) {
+		a.reauthorize()
 		return value, err
 	}
-	return read(a.getToken())
+
+	value, err = read(a.getToken())
+	// Rejected again on a token minted seconds ago. The credential isn't
+	// stale, the grant behind it is - which no further refreshing will
+	// change.
+	if errors.Is(err, playback.ErrAuthExpired) {
+		a.reauthorize()
+	}
+	return value, err
 }
 
 // setTokens takes the whole TokenResponse rather than its pieces so the
@@ -144,6 +155,72 @@ func (a *App) setTokens(t backend.TokenResponse) {
 		a.refreshTok = t.RefreshToken
 	}
 	a.tokenExpiresAt = t.ExpiresAt
+	// A brand new credential is not owed the cooldown the old one
+	// earned by failing - without this, a fresh sign-in still sat out
+	// the backoff before anything would refresh again.
+	a.refreshFailedAt = time.Time{}
+}
+
+// reauthorize throws the saved token away and asks for consent again,
+// because Spotify is rejecting one that refreshing cannot mend.
+//
+// A refresh only ever returns the same grant. So a grant Spotify has
+// stopped honouring - consent withdrawn, or scopes that were never
+// granted properly to begin with - survives every refresh, and
+// therefore every relaunch: GetAccessTokenFull only reaches the browser
+// flow when the refresh *fails*, and this one succeeds every time. The
+// bar used to advise a restart for exactly this, which could not
+// possibly help, and left people restarting into the same dead state
+// indefinitely.
+//
+// Runs in the background and returns straight away. The command that
+// tripped it is already lost; what matters is that the next one works.
+func (a *App) reauthorize() {
+	// Every part of this is user-facing - it opens a browser, deletes a
+	// credential and talks to the bar - so without a live window there
+	// is nobody to sign in and nothing to tell. Guards the unit tests
+	// too, which reach the auth-failure path with no ctx and would
+	// otherwise delete the developer's own token and open a tab.
+	if a.ctx == nil {
+		return
+	}
+
+	a.reauthMu.Lock()
+	if a.reauthorizing {
+		a.reauthMu.Unlock()
+		return
+	}
+	a.reauthorizing = true
+	a.reauthMu.Unlock()
+
+	go func() {
+		defer func() {
+			a.reauthMu.Lock()
+			a.reauthorizing = false
+			a.reauthMu.Unlock()
+		}()
+
+		logging.Printf("Spotify rejected the token even after refreshing it - asking for consent again")
+
+		// Removed before the flow starts, so a login the user abandons
+		// doesn't leave the dead credential behind to be picked up and
+		// trusted on the next launch.
+		if err := backend.ForgetToken(); err != nil {
+			logging.Printf("Could not delete the saved token: %v", err)
+		}
+		runtime.EventsEmit(a.ctx, "signing-in")
+
+		token, err := backend.Login()
+		if err != nil {
+			logging.Printf("Signing in again failed: %v", err)
+			runtime.EventsEmit(a.ctx, "login-failed")
+			return
+		}
+
+		a.setTokens(token)
+		logging.Printf("Signed in again")
+		runtime.EventsEmit(a.ctx, "logged-in")
+	}()
 }
 
 // startTokenRefreshLoop refreshes every 50 minutes so calls rarely

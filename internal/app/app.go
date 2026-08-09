@@ -64,6 +64,12 @@ type App struct {
 	// the fields every other caller is trying to read.
 	refreshMu sync.Mutex
 
+	// reauthMu guards the one-at-a-time re-login. A rejected token fails
+	// every command at once, and without this each one would open its
+	// own browser tab asking for consent.
+	reauthMu      sync.Mutex
+	reauthorizing bool
+
 	// expandedPanel is "" when collapsed, otherwise "settings" or
 	// "playlists" - only one can be open at a time, since they share
 	// the same window-resize mechanism.

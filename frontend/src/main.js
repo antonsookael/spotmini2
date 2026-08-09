@@ -496,6 +496,14 @@ EventsOn('premium-required', () => {
   showBarMessage('Spotify Premium required for playback', 3000)
 })
 
+// Spotify has stopped honouring the saved login and the app is opening
+// a browser to ask for consent again. Held on screen far longer than the
+// usual notice, because the thing it's describing happens in another
+// window and takes as long as signing in takes.
+EventsOn('signing-in', () => {
+  showBarMessage('Signing in to Spotify again...', 15000)
+})
+
 // The login flow ended without a token - consent refused, port 8888
 // already taken by another copy of the app, or the code exchange
 // rejected. Nothing retries it, so the bar has to say so rather than
