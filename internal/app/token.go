@@ -21,6 +21,13 @@ const tokenRefreshBuffer = 60 * time.Second
 // clears on its own well within a track.
 const refreshRetryCooldown = 30 * time.Second
 
+// How long a completed sign-in stands as proof that signing in is not
+// the answer. Long, because the failure it guards against is an account
+// the Spotify app will not serve at all - which no amount of consent
+// changes - but not permanent, so someone who fixes it at Spotify's end
+// gets picked up without relaunching.
+const reauthCooldown = 15 * time.Minute
+
 // getToken returns the access token, refreshing first if it's expired.
 // Checks wall-clock expiry on every call rather than trusting
 // startTokenRefreshLoop: that ticker uses the monotonic clock, which
@@ -175,6 +182,49 @@ func (a *App) setTokens(t backend.TokenResponse) {
 //
 // Runs in the background and returns straight away. The command that
 // tripped it is already lost; what matters is that the next one works.
+// reauthDecision is what claimReauth decided, and why.
+//
+// Spelled out rather than inferred from the duration beside it: a
+// sign-in that finished microseconds ago reports an elapsed time of
+// exactly zero on a coarse clock, which is indistinguishable from "no
+// duration applies" - and reading that as "one is already running"
+// swallowed the only message the user was going to get.
+type reauthDecision int
+
+const (
+	reauthClaimed reauthDecision = iota
+	// Another sign-in holds the claim and will report for itself.
+	reauthInFlight
+	// One finished recently and requests are being rejected anyway.
+	reauthOnCooldown
+)
+
+// claimReauth decides whether this caller should run the sign-in flow,
+// and marks it as running if so.
+//
+// One completed sign-in is the whole budget. Arriving here after one
+// means a token minted from fresh consent was rejected as well, and the
+// next would be rejected for the same reason - an account this Spotify
+// app will not serve, rather than a credential gone stale. Without the
+// cooldown, the poll that fails every ten seconds opened a browser tab
+// every ten seconds.
+func (a *App) claimReauth() (reauthDecision, time.Duration) {
+	a.reauthMu.Lock()
+	defer a.reauthMu.Unlock()
+
+	if a.reauthorizing {
+		return reauthInFlight, 0
+	}
+	if !a.reauthorizedAt.IsZero() {
+		if since := time.Since(a.reauthorizedAt); since < reauthCooldown {
+			return reauthOnCooldown, since
+		}
+	}
+
+	a.reauthorizing = true
+	return reauthClaimed, 0
+}
+
 func (a *App) reauthorize() {
 	// Every part of this is user-facing - it opens a browser, deletes a
 	// credential and talks to the bar - so without a live window there
@@ -185,13 +235,15 @@ func (a *App) reauthorize() {
 		return
 	}
 
-	a.reauthMu.Lock()
-	if a.reauthorizing {
-		a.reauthMu.Unlock()
+	switch decision, since := a.claimReauth(); decision {
+	case reauthInFlight:
+		// The one already running will report whatever it finds.
+		return
+	case reauthOnCooldown:
+		logging.Printf("Spotify still rejecting requests %s after a fresh sign-in - not asking again", since.Round(time.Millisecond))
+		runtime.EventsEmit(a.ctx, "command-failed", "Spotify keeps refusing this account")
 		return
 	}
-	a.reauthorizing = true
-	a.reauthMu.Unlock()
 
 	go func() {
 		defer func() {
@@ -218,6 +270,14 @@ func (a *App) reauthorize() {
 		}
 
 		a.setTokens(token)
+		// Stamped on success only. A flow that failed or was abandoned
+		// proved nothing about the account, so it shouldn't spend the
+		// one attempt - but a completed one did, and anything still
+		// being rejected after it is not a sign-in problem.
+		a.reauthMu.Lock()
+		a.reauthorizedAt = time.Now()
+		a.reauthMu.Unlock()
+
 		logging.Printf("Signed in again")
 		runtime.EventsEmit(a.ctx, "logged-in")
 	}()

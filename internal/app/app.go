@@ -69,6 +69,10 @@ type App struct {
 	// own browser tab asking for consent.
 	reauthMu      sync.Mutex
 	reauthorizing bool
+	// When the last re-login finished. Requests keep failing after one,
+	// so without a record of having tried, every poll starts another -
+	// which is a new browser tab every ten seconds, forever.
+	reauthorizedAt time.Time
 
 	// expandedPanel is "" when collapsed, otherwise "settings" or
 	// "playlists" - only one can be open at a time, since they share
