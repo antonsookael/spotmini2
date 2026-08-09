@@ -167,35 +167,43 @@ function render() {
 // land after a newer, correct one and overwrite it.
 let fetchSeq = 0
 
+// Commits a state read from Spotify to the bar. Split out from
+// fetchNowPlaying so the track-change confirmation can read without
+// committing - it needs to look at an answer before deciding whether
+// showing it would be an improvement or a step backwards.
+function applyPlaybackState(state) {
+  if (!state.item || !state.item.name) {
+    currentSong = ''
+    currentSpotifyURI = ''
+    render()
+    updateAutoWidth()
+    return
+  }
+  currentSong = state.item.name
+  // A track has artists; a podcast episode has a show instead - pick
+  // whichever is actually present rather than assuming it's a track.
+  currentArtist = state.item.artists && state.item.artists.length > 0
+    ? state.item.artists[0].name
+    : state.item.show
+    ? state.item.show.name
+    : ''
+  currentSpotifyURI = state.item.uri || ''
+  currentSeconds = Math.floor(state.progress_ms / 1000)
+  totalSeconds = Math.floor(state.item.duration_ms / 1000)
+  isCurrentlyPlaying = state.is_playing
+  isShuffled = state.shuffle_state
+  repeatState = state.repeat_state || 'off'
+  render()
+  updateAutoWidth()
+}
+
 // Re-syncs the local counter with Spotify's actual state.
 async function fetchNowPlaying() {
   const seq = ++fetchSeq
   try {
     const state = await GetNowPlaying()
     if (seq !== fetchSeq) return
-    if (!state.item || !state.item.name) {
-      currentSong = ''
-      currentSpotifyURI = ''
-      render()
-      updateAutoWidth()
-      return
-    }
-    currentSong = state.item.name
-    // A track has artists; a podcast episode has a show instead - pick
-    // whichever is actually present rather than assuming it's a track.
-    currentArtist = state.item.artists && state.item.artists.length > 0
-      ? state.item.artists[0].name
-      : state.item.show
-      ? state.item.show.name
-      : ''
-    currentSpotifyURI = state.item.uri || ''
-    currentSeconds = Math.floor(state.progress_ms / 1000)
-    totalSeconds = Math.floor(state.item.duration_ms / 1000)
-    isCurrentlyPlaying = state.is_playing
-    isShuffled = state.shuffle_state
-    repeatState = state.repeat_state || 'off'
-    render()
-    updateAutoWidth()
+    applyPlaybackState(state)
   } catch (err) {
     if (seq !== fetchSeq) return
     currentSpotifyURI = ''
@@ -210,10 +218,21 @@ async function fetchNowPlaying() {
 let secondsSinceSync = 0
 let idleSecondsSinceCheck = 0
 
+// True while a pick from search is being confirmed. The resyncs below
+// stand down for the duration: they commit whatever Spotify says, and
+// Spotify lags its own writes, so one landing mid-confirmation would
+// flick the bar back to the song that was just replaced.
+//
+// Declared here, above the ticker that reads it, rather than down with
+// the rest of the track-change state: the ticker is registered before
+// that point, so if anything ever threw in between, the callback would
+// hit this in its dead zone and fail every second from then on.
+let confirmingPick = false
+
 setInterval(() => {
   if (!currentSong) {
     idleSecondsSinceCheck++
-    if (idleSecondsSinceCheck >= 2) {
+    if (idleSecondsSinceCheck >= 2 && !confirmingPick) {
       idleSecondsSinceCheck = 0
       fetchNowPlaying()
     }
@@ -226,6 +245,12 @@ setInterval(() => {
     currentSeconds++
     render()
   }
+
+  // A pick is mid-confirmation and already reading Spotify on its own
+  // schedule. The counter above keeps running; only the resyncs below
+  // stand down, since committing a read the confirmation has
+  // deliberately not committed yet is the one thing that undoes it.
+  if (confirmingPick) return
 
   // Resync as the track runs out, to pick up whatever Spotify moved on
   // to. Gated on actually playing, and on a couple of seconds having
@@ -262,34 +287,115 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 // than carrying on polling for a change that's already been overtaken.
 let trackChangeAttempt = 0
 
-// Reads until Spotify reports a track other than the one we skipped
-// away from, rather than trusting the first answer. Gives up after the
-// last delay and keeps whatever came back - a track that genuinely
-// doesn't change (a single-song context on repeat) would otherwise poll
-// forever.
+// The track a search pick asked for. A skip has no idea where it will
+// land, but picking a song from the results does - and knowing the
+// answer in advance is what lets the bar show it immediately and lets
+// the confirmation below wait for that exact track rather than merely
+// for the title to change.
+let pendingTrackURI = ''
+
+// Puts a picked track in the bar right away, before Spotify has been
+// asked about it. The panel closes on the same click, so the bar is the
+// first thing the eye lands on - and it was still showing the previous
+// song until the confirmation reads came back, which reads as the click
+// having missed.
+//
+// Safe to show something unconfirmed here because the loop below is
+// already on its way to Spotify for the truth, and replaces this with
+// whatever it finds.
+function showPendingTrack(track) {
+  pendingTrackURI = track.uri
+  currentSong = track.name
+  currentArtist = track.artist || ''
+  currentSpotifyURI = track.uri
+  isCurrentlyPlaying = true
+  currentSeconds = 0
+  // A search result carries no duration, so the timer starts blank
+  // rather than keeping the previous track's length, which would be
+  // wrong in a way that looks deliberate. The first confirmed read
+  // fills it in.
+  totalSeconds = 0
+  render()
+  updateAutoWidth()
+}
+
+// Reads until Spotify agrees the track changed, rather than trusting
+// the first answer. Gives up after the last delay - a track that
+// genuinely doesn't change (a single-song context on repeat) would
+// otherwise poll forever.
+//
 // startedAt is the keypress, handed over by Go, so the reported total
 // covers the whole thing rather than just the part after the command
 // came back.
 async function confirmTrackChange(startedAt) {
   const attempt = ++trackChangeAttempt
+  // Claimed for this run: a later command starts from no expectation
+  // rather than inheriting this one's.
+  const target = pendingTrackURI
+  pendingTrackURI = ''
   const previousURI = currentSpotifyURI
   const elapsed = () => Math.round(Date.now() - startedAt)
   let reads = 0
+  let latest = null
 
+  confirmingPick = !!target
+  try {
+    return await runConfirmation()
+  } finally {
+    // Cleared on every way out, including the early returns for a
+    // superseded attempt - a flag left set would hold off the periodic
+    // resync for the rest of the session.
+    if (target) confirmingPick = false
+  }
+
+  async function runConfirmation() {
   for (const delay of trackChangeRetryDelays) {
     await sleep(delay)
-    // Superseded by a newer skip, which will report its own total -
+    // Superseded by a newer command, which will report its own total -
     // timing this one to a title that's already been replaced would
     // just be noise.
     if (attempt !== trackChangeAttempt) return
-    await fetchNowPlaying()
+
+    // Without a target there's nothing to compare against but the
+    // title we started from, so every read is worth showing.
+    if (!target) {
+      await fetchNowPlaying()
+      reads++
+      if (currentSpotifyURI !== previousURI) {
+        ReportTrackChange(elapsed(), reads, true)
+        return
+      }
+      continue
+    }
+
+    // With one, read without committing. Spotify lags its own writes,
+    // so an early read still describes the previous song - and showing
+    // it would flick the bar back to the track just replaced before
+    // flicking forward again.
+    //
+    // The sequence is claimed anyway, so an older read still in flight
+    // can't commit over the top of what this loop decides.
+    fetchSeq++
+    try {
+      latest = await GetNowPlaying()
+    } catch (err) {
+      latest = null
+    }
     reads++
-    if (currentSpotifyURI !== previousURI) {
+    if (attempt !== trackChangeAttempt) return
+    if (latest && latest.item && latest.item.uri === target) {
+      applyPlaybackState(latest)
       ReportTrackChange(elapsed(), reads, true)
       return
     }
   }
+
+  // Out of attempts. With a target the bar is still showing an
+  // unconfirmed guess, so hand it the last thing Spotify actually said
+  // rather than leaving the guess standing indefinitely.
+  if (target && latest) applyPlaybackState(latest)
   ReportTrackChange(elapsed(), reads, false)
+  }
 }
 
 // Emitted after any playback command, so the UI reflects it right away
@@ -493,6 +599,9 @@ function renderResults(playlists, tracks) {
       info.className = 'track-item-info'
       info.addEventListener('click', () => {
         PlayTrack(track.uri)
+        // Before the panel closes over it, so the bar has already
+        // changed by the time it's visible again.
+        showPendingTrack(track)
         TogglePlaylistsPanel()
       })
 
