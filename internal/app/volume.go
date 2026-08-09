@@ -40,40 +40,77 @@ func (a *App) VolumeDown() {
 // volume is never polled, so a failed change recorded as applied would
 // desync lastVolume permanently.
 //
-// The lock covers the whole read-adjust-write, not just the cache -
-// volumeUp and volumeDown run on separate goroutines, so guarding only
-// the cache would still let both read the same starting value.
+// The lock guards the cache and the in-flight flag, never a network
+// call. VolumeUp and VolumeDown run on separate goroutines, so one has
+// to be applying at a time - but it folds concurrent presses into a
+// single pending delta rather than making them wait their turn, since
+// waiting meant each one landing seconds after it was pressed.
 func (a *App) adjustVolume(delta int) {
 	a.volumeMu.Lock()
-	defer a.volumeMu.Unlock()
-
-	current := a.lastVolume
-	if time.Since(a.lastVolumeAt) >= volumeCacheWindow {
-		var err error
-		current, err = a.currentVolume()
-		if err != nil {
-			// Same reasoning as the read-then-write commands: a volume
-			// change is relative, so a failed read leaves nothing to
-			// change it from, and giving up without a word is what made
-			// that indistinguishable from the hotkey never firing.
-			a.reportCommandFailure("volume", err)
-			return
-		}
-	}
-
-	var applied int
-	err := a.withDeviceRevival("volume", func(token string) error {
-		var err error
-		applied, err = playback.SetVolume(token, current+delta)
-		return err
-	})
-	if err != nil {
+	a.pendingDelta += delta
+	if a.applyingVolume {
+		// One is already in flight. It will pick this up on its way
+		// round - which is the point: a revival can take seconds, and
+		// queueing behind it meant five impatient presses replayed as
+		// five separate writes long after the user stopped pressing.
+		a.volumeMu.Unlock()
 		return
 	}
+	a.applyingVolume = true
+	a.volumeMu.Unlock()
 
-	a.lastVolume = applied
-	a.lastVolumeAt = time.Now()
-	runtime.EventsEmit(a.ctx, "volume-changed", applied)
+	for {
+		a.volumeMu.Lock()
+		pending := a.pendingDelta
+		a.pendingDelta = 0
+		if pending == 0 {
+			a.applyingVolume = false
+			a.volumeMu.Unlock()
+			return
+		}
+		current := a.lastVolume
+		fresh := time.Since(a.lastVolumeAt) < volumeCacheWindow
+		a.volumeMu.Unlock()
+
+		// Every network call below runs with the lock released, so a
+		// press arriving mid-revival lands in pendingDelta immediately
+		// rather than blocking a hotkey goroutine for seconds.
+		if !fresh {
+			read, err := a.currentVolume()
+			if err != nil {
+				// Same reasoning as the read-then-write commands: a
+				// volume change is relative, so a failed read leaves
+				// nothing to change it from, and giving up without a
+				// word is what made that indistinguishable from the
+				// hotkey never firing.
+				a.reportCommandFailure("volume", err)
+				a.volumeMu.Lock()
+				a.applyingVolume = false
+				a.volumeMu.Unlock()
+				return
+			}
+			current = read
+		}
+
+		var applied int
+		err := a.withDeviceRevival("volume", func(token string) error {
+			var err error
+			applied, err = playback.SetVolume(token, current+pending)
+			return err
+		})
+		if err != nil {
+			a.volumeMu.Lock()
+			a.applyingVolume = false
+			a.volumeMu.Unlock()
+			return
+		}
+
+		a.volumeMu.Lock()
+		a.lastVolume = applied
+		a.lastVolumeAt = time.Now()
+		a.volumeMu.Unlock()
+		runtime.EventsEmit(a.ctx, "volume-changed", applied)
+	}
 }
 
 // currentVolume reads the active device's volume, reviving a device

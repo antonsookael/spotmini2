@@ -39,6 +39,7 @@ func Run(assets embed.FS) error {
 		},
 		BackgroundColour: &options.RGBA{R: 18, G: 18, B: 18, A: 255},
 		OnStartup:        a.startup,
+		OnDomReady:       a.domReady,
 		OnShutdown:       a.shutdown,
 		Bind: []interface{}{
 			a,

@@ -20,7 +20,7 @@ func TestFailureMessageNamesEveryCause(t *testing.T) {
 		{"rate limited", playback.ErrRateLimited, "Too many requests - wait a moment"},
 		{"down", playback.ErrSpotifyDown, "Spotify is down - try again later"},
 		{"status", &playback.StatusError{Status: 418}, "Spotify error 418 - try again"},
-		{"unknown", errors.New("boom"), "Spotify request failed - try again"},
+		{"unknown", errors.New("boom"), "Spotify request failed - restart app"},
 	}
 
 	for _, tc := range cases {

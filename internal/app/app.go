@@ -54,9 +54,15 @@ type App struct {
 	accessToken    string
 	refreshTok     string
 	tokenExpiresAt time.Time
-	// When the last forced refresh failed, so a broken one isn't retried
-	// on every single request. See refreshNow.
+	// When the last refresh failed, so a broken one isn't retried on
+	// every single request. See refresh.
 	refreshFailedAt time.Time
+
+	// refreshMu serialises refreshes so a burst of rejected requests
+	// spends one refresh token between them rather than one each. Kept
+	// apart from tokenMu so the network call itself runs with no lock on
+	// the fields every other caller is trying to read.
+	refreshMu sync.Mutex
 
 	// expandedPanel is "" when collapsed, otherwise "settings" or
 	// "playlists" - only one can be open at a time, since they share
@@ -76,10 +82,22 @@ type App struct {
 	dragOriginResolved bool
 	dragWidth          int
 	dragHeight         int
+	// Bounds of the monitor dragOrigin was resolved against, so a drag
+	// that crosses onto another one can tell it has to resolve again.
+	dragMonLeft   int
+	dragMonTop    int
+	dragMonRight  int
+	dragMonBottom int
+	dragMonOK     bool
 
 	volumeMu     sync.Mutex
 	lastVolume   int
 	lastVolumeAt time.Time
+	// Presses that arrived while a change was in flight, folded together
+	// rather than queued: five taps during a slow device revival should
+	// be one write of +50, not five writes replayed seconds late.
+	pendingDelta   int
+	applyingVolume bool
 
 	// Written once by checkForUpdate, read by GetUpdateInfo. Kept rather
 	// than only announced: the check runs before the window exists, so
@@ -148,4 +166,11 @@ func (a *App) startup(ctx context.Context) {
 // restore it.
 func (a *App) shutdown(ctx context.Context) {
 	a.saveWindowPosition()
+}
+
+// domReady runs once the window and its page are up. Anything that
+// needs to see a real window belongs here rather than in startup, which
+// Wails runs before there is one.
+func (a *App) domReady(ctx context.Context) {
+	a.ensureOnScreen()
 }

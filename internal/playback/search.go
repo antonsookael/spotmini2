@@ -3,8 +3,6 @@ package playback
 import (
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 )
 
@@ -32,26 +30,10 @@ type searchResponse struct {
 // up to limit results.
 func SearchTracks(accessToken, query string, limit int) ([]TrackResult, error) {
 	u := fmt.Sprintf("https://api.spotify.com/v1/search?type=track&limit=%d&q=%s", limit, url.QueryEscape(query))
-	req, err := http.NewRequest("GET", u, nil)
+
+	body, err := doGet(u, accessToken)
 	if err != nil {
 		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("spotify returned status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var parsed searchResponse

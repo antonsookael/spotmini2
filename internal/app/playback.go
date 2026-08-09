@@ -68,7 +68,13 @@ func failureMessage(err error) string {
 	if errors.As(err, &statusErr) {
 		return fmt.Sprintf("Spotify error %d - try again", statusErr.Status)
 	}
-	return "Spotify request failed - try again"
+
+	// Restarting rather than retrying, because that's what has actually
+	// been observed to clear these. Relaunching re-runs the whole auth
+	// path - refresh, then a full login if that fails - so anything left
+	// stuck in this process gets rebuilt, and there's nothing else a
+	// generic failure can usefully suggest.
+	return "Spotify request failed - restart app"
 }
 
 func (a *App) PlayPause() {
@@ -131,12 +137,27 @@ func (a *App) ToggleLoop() {
 	})
 }
 
-func (a *App) GetNowPlaying() playback.PlaybackState {
+// GetNowPlaying reads the current playback state, returning the failure
+// as an error rather than an empty state.
+//
+// The empty state was indistinguishable from a genuinely idle Spotify,
+// so every rate limit, outage and dropped connection displayed as
+// "Nothing playing" - and because the bar treats nothing-playing as a
+// reason to poll every two seconds instead of ten, a 429 sustained
+// itself: rate limited, looks idle, polls five times faster, stays rate
+// limited. It also overwrote the login-failure notice a few seconds
+// after it appeared, leaving an app that had never signed in quietly
+// claiming there was nothing on.
+//
+// The error carries the same wording the bar uses for a failed command;
+// the underlying cause goes to the log.
+func (a *App) GetNowPlaying() (playback.PlaybackState, error) {
 	state, err := retryOnAuthFailure(a, playback.NowPlaying)
 	if err != nil {
-		return playback.PlaybackState{}
+		logging.Printf("[command] now-playing read failed: %v", err)
+		return playback.PlaybackState{}, errors.New(failureMessage(err))
 	}
-	return state
+	return state, nil
 }
 
 // revivalRetryDelays is how long to wait before each retry after
@@ -203,7 +224,7 @@ func (a *App) runPlayerCommand(name string, expectTrackChange bool, action func(
 	// password change, or the stale one getToken falls back to when its
 	// own refresh failed. Recovering here is why this no longer surfaces
 	// as a failed command the user is told to restart out of.
-	if errors.Is(err, playback.ErrAuthExpired) && a.refreshNow() {
+	if errors.Is(err, playback.ErrAuthExpired) && a.refresh(token) {
 		token = a.getToken()
 		err = action(token)
 	}

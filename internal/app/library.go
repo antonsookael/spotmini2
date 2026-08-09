@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"strings"
 
 	"spotmini-gui/internal/logging"
@@ -19,7 +20,7 @@ const searchResultLimit = 8
 // caches what it gets, and caching a failure pinned the picker to
 // nothing but Liked Songs for the rest of the session.
 func (a *App) GetPlaylists() ([]playback.Playlist, error) {
-	playlists, err := playback.GetPlaylists(a.getToken())
+	playlists, err := retryOnAuthFailure(a, playback.GetPlaylists)
 	if err != nil {
 		logging.Printf("Failed to fetch playlists: %v", err)
 		return nil, err
@@ -38,10 +39,10 @@ func (a *App) PlayPlaylist(uri string) {
 // PlayLikedSongs plays the most recently saved tracks. Liked Songs has
 // no playlist URI, so it plays explicit track URIs instead.
 func (a *App) PlayLikedSongs() {
-	token := a.getToken()
-	uris, err := playback.GetLikedSongURIs(token)
+	uris, err := retryOnAuthFailure(a, playback.GetLikedSongURIs)
 	if err != nil {
 		logging.Printf("Failed to fetch liked songs: %v", err)
+		a.reportCommandFailure("playLikedSongs", err)
 		return
 	}
 	if len(uris) == 0 {
@@ -54,16 +55,21 @@ func (a *App) PlayLikedSongs() {
 
 // SearchTracks searches Spotify's catalog for the picker's search box.
 // A blank query short-circuits rather than hitting the API.
-func (a *App) SearchTracks(query string) []playback.TrackResult {
+// Returns the failure rather than an empty slice: a rejected token, a
+// rate limit and a genuinely empty result set all rendered as "no
+// songs found", so a broken search looked like a search that worked.
+func (a *App) SearchTracks(query string) ([]playback.TrackResult, error) {
 	if strings.TrimSpace(query) == "" {
-		return nil
+		return nil, nil
 	}
-	results, err := playback.SearchTracks(a.getToken(), query, searchResultLimit)
+	results, err := retryOnAuthFailure(a, func(token string) ([]playback.TrackResult, error) {
+		return playback.SearchTracks(token, query, searchResultLimit)
+	})
 	if err != nil {
 		logging.Printf("Track search failed: %v", err)
-		return nil
+		return nil, errors.New(failureMessage(err))
 	}
-	return results
+	return results, nil
 }
 
 // PlayTrack starts playback of a single track by URI - used when
@@ -79,9 +85,12 @@ func (a *App) PlayTrack(uri string) {
 // tick on the strength of this call, so swallowing the error left the
 // UI claiming a save that never happened.
 func (a *App) SaveTrackToLiked(id string) error {
-	if err := playback.SaveTrack(a.getToken(), id); err != nil {
+	_, err := retryOnAuthFailure(a, func(token string) (struct{}, error) {
+		return struct{}{}, playback.SaveTrack(token, id)
+	})
+	if err != nil {
 		logging.Printf("Failed to save track: %v", err)
-		return err
+		return errors.New(failureMessage(err))
 	}
 	return nil
 }

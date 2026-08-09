@@ -67,6 +67,18 @@ func (e *StatusError) Error() string {
 	return fmt.Sprintf("%s: spotify returned status %d: %s", e.Action, e.Status, e.Body)
 }
 
+// requestTimeout bounds every call to Spotify. Without one, a
+// connection that establishes and then stalls - a laptop waking onto a
+// half-open socket, a captive portal that accepts and never answers -
+// has no deadline at all: net/http's default only limits the dial, so
+// the request hangs until TCP keepalive gives up minutes later, taking
+// whatever the caller was holding with it.
+const requestTimeout = 15 * time.Second
+
+// httpClient is shared deliberately. A fresh http.Client per call also
+// meant a fresh connection pool per call, so nothing was ever reused.
+var httpClient = &http.Client{Timeout: requestTimeout}
+
 // took formats how long a call has been running, rounded to the
 // millisecond - sub-millisecond precision is noise next to a network
 // round trip, and the full float makes the log lines hard to scan.
@@ -154,8 +166,7 @@ func doPlayerGet(url, accessToken string) ([]byte, error) {
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		logging.Printf("[spotify] %s -> %v in %s", action, err, took(start))
 		// Wrapped rather than passed through: a transport failure is the
@@ -194,6 +205,21 @@ func doPlayerGet(url, accessToken string) ([]byte, error) {
 	return body, nil
 }
 
+// doGet is doPlayerGet for the endpoints that aren't the player -
+// playlists, search, the library. Same classification; the difference is
+// that an empty body is a fault here rather than the player's meaningful
+// "nothing is active".
+func doGet(url, accessToken string) ([]byte, error) {
+	body, err := doPlayerGet(url, accessToken)
+	if err != nil {
+		return nil, err
+	}
+	if body == nil {
+		return nil, fmt.Errorf("GET %s: spotify returned an empty body", strings.TrimPrefix(url, apiPrefix))
+	}
+	return body, nil
+}
+
 // doPlayerRequest issues a request against the Spotify player API and
 // translates a "no active device" response into ErrNoActiveDevice, so
 // callers can tell that failure apart from any other kind and react to
@@ -214,8 +240,7 @@ func doPlayerRequest(method, url, accessToken string, body io.Reader) error {
 		req.Header.Set("Content-Type", "application/json")
 	}
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		// Never reached Spotify at all - worth recording, since from the
 		// user's side it looks identical to a command being ignored.

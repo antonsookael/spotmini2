@@ -121,10 +121,15 @@ func (a *App) BeginDrag() {
 	width, height := runtime.WindowGetSize(a.ctx)
 	originX, originY, ok := workAreaOriginAt(x+width/2, y+height/2)
 
+	left, top, right, bottom, boundsOK := monitorBoundsAt(x+width/2, y+height/2)
+
 	a.dragMu.Lock()
 	a.dragActive = true
 	a.dragOriginResolved = ok
 	a.dragOriginX, a.dragOriginY = originX, originY
+	a.dragMonLeft, a.dragMonTop = left, top
+	a.dragMonRight, a.dragMonBottom = right, bottom
+	a.dragMonOK = boundsOK
 	// Cached so clampToScreen doesn't need a size query every frame.
 	// Auto-fit could resize mid-drag if the song changes, leaving this
 	// slightly stale for a frame or two - only enough to shift the
@@ -151,6 +156,9 @@ func (a *App) DragWindowTo(x, y int) {
 	resolved := a.dragOriginResolved
 	originX, originY := a.dragOriginX, a.dragOriginY
 	width, height := a.dragWidth, a.dragHeight
+	monLeft, monTop := a.dragMonLeft, a.dragMonTop
+	monRight, monBottom := a.dragMonRight, a.dragMonBottom
+	monOK := a.dragMonOK
 	a.dragMu.Unlock()
 
 	if !active {
@@ -168,6 +176,38 @@ func (a *App) DragWindowTo(x, y int) {
 		runtime.WindowSetPosition(a.ctx, x, y)
 		return
 	}
+
+	// The compensation origin belongs to one monitor, and Windows
+	// re-evaluates which monitor the window is on for every SetPos - so
+	// the moment a drag carries the window across a shared edge, a
+	// cached origin is compensating against the wrong screen. On a
+	// display at virtual x=-1920 that is a full screen's worth of error:
+	// the window teleports and then trails the cursor for the rest of
+	// the drag.
+	//
+	// Re-resolved only on the crossing rather than every frame, which is
+	// what the cache exists to avoid: the comparison below is arithmetic
+	// on values already in hand, and the syscalls only happen on the few
+	// frames that actually change monitor.
+	centreX, centreY := x+width/2, y+height/2
+	if monOK && (centreX < monLeft || centreX >= monRight || centreY < monTop || centreY >= monBottom) {
+		if newX, newY, ok := workAreaOriginAt(centreX, centreY); ok {
+			originX, originY = newX, newY
+			left, top, right, bottom, boundsOK := monitorBoundsAt(centreX, centreY)
+
+			a.dragMu.Lock()
+			// Only if this drag is still the current one - a stray frame
+			// arriving after mouseup must not re-arm the cache.
+			if a.dragActive {
+				a.dragOriginX, a.dragOriginY = newX, newY
+				a.dragMonLeft, a.dragMonTop = left, top
+				a.dragMonRight, a.dragMonBottom = right, bottom
+				a.dragMonOK = boundsOK
+			}
+			a.dragMu.Unlock()
+		}
+	}
+
 	runtime.WindowSetPosition(a.ctx, x-originX, y-originY)
 }
 

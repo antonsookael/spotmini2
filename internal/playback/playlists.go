@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 )
 
@@ -24,32 +22,13 @@ type playlistsResponse struct {
 // it covers the overwhelming majority of libraries and keeps this to a
 // single request.
 func GetPlaylists(accessToken string) ([]Playlist, error) {
-	req, err := http.NewRequest("GET", "https://api.spotify.com/v1/me/playlists?limit=50", nil)
+	// Through the shared helper, which is what turns a rejection into a
+	// named cause. Hand-rolled, this returned a bare "status 401" that
+	// nothing could recognise, so a token that had died early left the
+	// picker broken for the session while playback recovered.
+	body, err := doGet("https://api.spotify.com/v1/me/playlists?limit=50", accessToken)
 	if err != nil {
 		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	// Checked explicitly rather than just trying to unmarshal whatever
-	// came back - an error response (e.g. 403 for a missing OAuth
-	// scope) is still valid JSON, just not shaped like
-	// playlistsResponse, so it would otherwise silently unmarshal into
-	// an empty Items and look identical to "no playlists" instead of
-	// surfacing the real failure.
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("spotify returned status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var parsed playlistsResponse
@@ -88,30 +67,13 @@ type savedTracksResponse struct {
 // so playing it means passing explicit track URIs instead of a
 // context - this is what supplies those.
 func GetLikedSongURIs(accessToken string) ([]string, error) {
-	req, err := http.NewRequest("GET", "https://api.spotify.com/v1/me/tracks?limit=50", nil)
+	// Through the shared helper for the same reason as GetPlaylists: an
+	// error response unmarshals into an empty Items and looks exactly
+	// like "no saved tracks", and a bare status error tells the caller
+	// nothing it can act on.
+	body, err := doGet("https://api.spotify.com/v1/me/tracks?limit=50", accessToken)
 	if err != nil {
 		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	// See the identical check in GetPlaylists - without this, an error
-	// response (e.g. missing OAuth scope) unmarshals into an empty
-	// Items and looks exactly like "no saved tracks" instead of
-	// surfacing the real failure.
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("spotify returned status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var parsed savedTracksResponse
@@ -141,22 +103,8 @@ func PlayURIs(accessToken string, uris []string) error {
 // user's Liked Songs. Not a player command (no device involved), so
 // unlike PlayURIs this doesn't go through doPlayerRequest/withDeviceRevival.
 func SaveTrack(accessToken, id string) error {
-	req, err := http.NewRequest("PUT", "https://api.spotify.com/v1/me/tracks?ids="+url.QueryEscape(id), nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("spotify returned status %d: %s", resp.StatusCode, string(body))
-	}
-	return nil
+	// doPlayerRequest despite not being a player command: what's wanted
+	// is its rejection handling, so a Like refused for a dead token
+	// reaches the caller as something the bar can name.
+	return doPlayerRequest("PUT", "https://api.spotify.com/v1/me/tracks?ids="+url.QueryEscape(id), accessToken, nil)
 }

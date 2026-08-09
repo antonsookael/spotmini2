@@ -197,19 +197,29 @@ function applyPlaybackState(state) {
   updateAutoWidth()
 }
 
+// True when the last read failed. Two things depend on knowing the
+// difference between "Spotify says nothing is playing" and "Spotify
+// didn't answer": the bar says so instead of claiming idleness, and the
+// ticker below keeps its slow cadence rather than the two-second one it
+// uses while genuinely idle - which, against an endpoint that just rate
+// limited us, is the difference between recovering and staying stuck.
+let readFailed = false
+
 // Re-syncs the local counter with Spotify's actual state.
 async function fetchNowPlaying() {
   const seq = ++fetchSeq
   try {
     const state = await GetNowPlaying()
     if (seq !== fetchSeq) return
+    readFailed = false
     applyPlaybackState(state)
   } catch (err) {
     if (seq !== fetchSeq) return
-    currentSpotifyURI = ''
-    trackInfoEl.classList.remove('clickable')
-    trackInfoEl.textContent = 'Error loading playback'
-    timerEl.textContent = ''
+    readFailed = true
+    // The track state is deliberately left alone. It's the last thing
+    // Spotify actually said, and a failed read is no reason to claim
+    // the song stopped - it only means we can't see it right now.
+    showBarMessage(String((err && err.message) || err), 4000)
   }
 }
 
@@ -229,10 +239,18 @@ let idleSecondsSinceCheck = 0
 // hit this in its dead zone and fail every second from then on.
 let confirmingPick = false
 
+// How often to re-check while nothing is playing. Two seconds normally,
+// so starting a song elsewhere shows up promptly - but a read that
+// failed backs off to the same cadence as ordinary playback, because
+// the usual reason a read fails is that we asked too often.
+const IDLE_POLL_SECONDS = 2
+const FAILED_POLL_SECONDS = 10
+
 setInterval(() => {
   if (!currentSong) {
     idleSecondsSinceCheck++
-    if (idleSecondsSinceCheck >= 2 && !confirmingPick) {
+    const due = readFailed ? FAILED_POLL_SECONDS : IDLE_POLL_SECONDS
+    if (idleSecondsSinceCheck >= due && !confirmingPick) {
       idleSecondsSinceCheck = 0
       fetchNowPlaying()
     }
@@ -342,10 +360,12 @@ async function confirmTrackChange(startedAt) {
   try {
     return await runConfirmation()
   } finally {
-    // Cleared on every way out, including the early returns for a
-    // superseded attempt - a flag left set would hold off the periodic
-    // resync for the rest of the session.
-    if (target) confirmingPick = false
+    // Cleared on the way out, but only by the run that still owns it. A
+    // superseded attempt returning early must leave the flag alone: the
+    // newer run set it for itself and is still relying on it, and
+    // clearing it here let the periodic resync fire mid-confirmation and
+    // commit the previous song - the exact flick this flag prevents.
+    if (target && attempt === trackChangeAttempt) confirmingPick = false
   }
 
   async function runConfirmation() {
@@ -461,7 +481,18 @@ function showBarMessage(text, ms) {
 // this a Free user sees nothing happen and no reason why.
 // Kept short enough to fit the bar at its default width - the longer
 // wording this replaced was silently ellipsized.
+// A command that was refused never reaches confirmTrackChange, which is
+// the only thing that clears the pending pick. Left set, it becomes the
+// target of whatever skip comes next - which then spends the full 4s
+// backoff waiting for a track Spotify was never asked to play, holding
+// the bar on the old title the whole time and logging a false
+// unconfirmed change.
+function clearPendingTrack() {
+  pendingTrackURI = ''
+}
+
 EventsOn('premium-required', () => {
+  clearPendingTrack()
   showBarMessage('Spotify Premium required for playback', 3000)
 })
 
@@ -478,13 +509,15 @@ EventsOn('login-failed', () => {
 // it knows which of the causes it was, and the whole point is that the
 // bar names one instead of sending anyone off to find a log file.
 EventsOn('command-failed', (message) => {
-  showBarMessage(message || 'Spotify request failed - try again', 4000)
+  clearPendingTrack()
+  showBarMessage(message || 'Spotify request failed - restart app', 4000)
 })
 
 // Nothing is connected to Spotify Connect - the app is closed rather
 // than merely idle, so there's no device to hand playback to and the
 // command can't go anywhere.
 EventsOn('no-device', () => {
+  clearPendingTrack()
   showBarMessage("Spotify isn't open or playing anywhere", 5000)
 })
 
@@ -666,7 +699,18 @@ function filterPlaylists() {
   renderResults(filteredPlaylists, [])
   const thisSearch = searchToken
   trackSearchTimeout = setTimeout(async () => {
-    const tracks = (await SearchTracks(query)) || []
+    let tracks
+    try {
+      tracks = (await SearchTracks(query)) || []
+    } catch (err) {
+      if (thisSearch !== searchToken) return
+      // Said out loud rather than rendered as an empty result set: a
+      // failed search and a search with no matches looked identical, so
+      // a rejected token read as "this song isn't on Spotify".
+      renderResults(filteredPlaylists, [])
+      showToast(String((err && err.message) || err), 2500)
+      return
+    }
     if (thisSearch !== searchToken) return
     renderResults(filteredPlaylists, tracks)
   }, 350)

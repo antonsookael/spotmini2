@@ -59,28 +59,43 @@ func TestRetryOnAuthFailureReturnsTheValue(t *testing.T) {
 }
 
 // A refresh that just failed must not be retried on the next request.
-// The now-playing poll runs every ten seconds, so without the cooldown
+// The idle poll runs every couple of seconds, so without the cooldown
 // one broken refresh token becomes a permanent stream of them.
-func TestRefreshNowBacksOffAfterAFailure(t *testing.T) {
+func TestRefreshBacksOffAfterAFailure(t *testing.T) {
 	a := &App{}
 	a.refreshTok = "broken"
 	a.refreshFailedAt = time.Now()
 
-	if a.refreshNow() {
-		t.Error("refreshNow tried again inside the cooldown")
+	if a.refresh(a.currentAccessToken()) {
+		t.Error("refresh tried again inside the cooldown")
+	}
+}
+
+// A caller that arrives after someone else has already replaced the
+// token has nothing to do - and must not spend the rotating refresh
+// token a second time to find that out.
+func TestRefreshIsSingleFlight(t *testing.T) {
+	a := &App{}
+	a.refreshTok = "good"
+	a.accessToken = "new-token"
+
+	// "old-token" is what this caller was rejected with; the token in
+	// play has moved on, so this must succeed without a network call.
+	if !a.refresh("old-token") {
+		t.Error("refresh did not recognise that the token had already been replaced")
 	}
 }
 
 // The cooldown must expire, or one blip disables recovery for the rest
 // of the session.
-func TestRefreshNowRetriesOnceTheCooldownPasses(t *testing.T) {
+func TestRefreshRetriesOnceTheCooldownPasses(t *testing.T) {
 	a := &App{}
 	a.refreshTok = "" // no token, so it stops before any network call
 	a.refreshFailedAt = time.Now().Add(-2 * refreshRetryCooldown)
 
 	// Reaching the empty-token check at all proves the cooldown let it
 	// through; a live refresh can't be exercised without a network.
-	if a.refreshNow() {
-		t.Error("refreshNow claimed success with no refresh token")
+	if a.refresh(a.currentAccessToken()) {
+		t.Error("refresh claimed success with no refresh token")
 	}
 }

@@ -28,80 +28,85 @@ func (a *App) getToken() string {
 	a.tokenMu.RLock()
 	token := a.accessToken
 	refresh := a.refreshTok
-	stale := refresh != "" && time.Now().After(a.tokenExpiresAt.Add(-tokenRefreshBuffer))
+	expires := a.tokenExpiresAt
 	a.tokenMu.RUnlock()
 
-	if !stale {
+	if refresh == "" || time.Now().Before(expires.Add(-tokenRefreshBuffer)) {
 		return token
 	}
 
-	a.tokenMu.Lock()
-	defer a.tokenMu.Unlock()
+	a.refresh(token)
 
-	// Another goroutine may have refreshed while we waited for the lock.
-	if time.Now().Before(a.tokenExpiresAt.Add(-tokenRefreshBuffer)) {
-		return a.accessToken
-	}
-
-	newToken, err := backend.RefreshToken(a.refreshTok)
-	if err != nil {
-		logging.Printf("On-demand token refresh failed: %v", err)
-		return a.accessToken
-	}
-
-	a.accessToken = newToken.AccessToken
-	if newToken.RefreshToken != "" {
-		a.refreshTok = newToken.RefreshToken
-	}
-	a.tokenExpiresAt = newToken.ExpiresAt
-	// To the log file, not just stdout: a built app has no console, and
-	// a refresh is infrequent enough to be worth a line - it's the thing
-	// that goes quiet first when auth starts failing.
-	logging.Printf("Access token refreshed on demand")
-
+	a.tokenMu.RLock()
+	defer a.tokenMu.RUnlock()
 	return a.accessToken
 }
 
-// refreshNow trades the refresh token for a new access token regardless
-// of what the expiry says, and reports whether it worked.
+// refresh trades the refresh token for a new access token, and reports
+// whether the token in play is now a good one.
 //
-// getToken's clock check catches the ordinary case, but it can only act
-// on when the token was *supposed* to die. A token can be dead early -
-// revoked from the Spotify account page, invalidated by a password
-// change, or simply the stale one getToken hands back when its own
-// refresh failed - and the only thing that ever finds out is a request
-// coming back 401. That's what this is for.
-func (a *App) refreshNow() bool {
-	a.tokenMu.Lock()
-	defer a.tokenMu.Unlock()
+// usedToken is the access token the caller was working with - either the
+// stale one getToken found, or the one Spotify just rejected. It is what
+// makes this single-flight: a caller that arrives to find the token has
+// already moved on has nothing left to do, so a burst of rejected
+// requests produces one refresh between them rather than one each. That
+// matters beyond mere waste, because Spotify rotates the refresh token
+// and invalidates the old one, so two refreshes racing with the same
+// value means one of them comes back invalid_grant.
+//
+// The network call deliberately happens with no lock held. It used to run
+// under tokenMu's write lock, which meant every hotkey and every poll
+// queued behind it - and with no timeout on the client, a connection that
+// stalled instead of failing froze the whole app for as long as the OS
+// took to give up.
+func (a *App) refresh(usedToken string) bool {
+	a.refreshMu.Lock()
+	defer a.refreshMu.Unlock()
 
-	if a.refreshTok == "" {
+	a.tokenMu.RLock()
+	refreshTok := a.refreshTok
+	current := a.accessToken
+	failedAt := a.refreshFailedAt
+	a.tokenMu.RUnlock()
+
+	if refreshTok == "" {
+		return false
+	}
+	// Someone refreshed while we waited our turn, so the token this
+	// caller had trouble with isn't the one in play any more.
+	if current != usedToken {
+		return true
+	}
+	// A refresh that just failed will not have started working seconds
+	// later, and the callers here include a poll. Without this, one dead
+	// refresh token means a request to Spotify's token endpoint every
+	// couple of seconds for as long as the app is open.
+	if time.Since(failedAt) < refreshRetryCooldown {
 		return false
 	}
 
-	// A refresh that just failed is not going to start working within
-	// seconds, and the reads that trigger this include a poll running
-	// every ten. Without the cooldown a broken refresh token means two
-	// requests to Spotify every poll, forever - which is its own way of
-	// earning a rate limit on top of whatever broke first.
-	if time.Since(a.refreshFailedAt) < refreshRetryCooldown {
-		return false
-	}
-
-	newToken, err := backend.RefreshToken(a.refreshTok)
+	newToken, err := backend.RefreshToken(refreshTok)
 	if err != nil {
-		logging.Printf("Forced token refresh failed: %v", err)
+		logging.Printf("Token refresh failed: %v", err)
+		a.tokenMu.Lock()
 		a.refreshFailedAt = time.Now()
+		a.tokenMu.Unlock()
 		return false
 	}
-	a.refreshFailedAt = time.Time{}
 
+	a.tokenMu.Lock()
 	a.accessToken = newToken.AccessToken
 	if newToken.RefreshToken != "" {
 		a.refreshTok = newToken.RefreshToken
 	}
 	a.tokenExpiresAt = newToken.ExpiresAt
-	logging.Printf("Access token refreshed after a rejected request")
+	a.refreshFailedAt = time.Time{}
+	a.tokenMu.Unlock()
+
+	// To the log file, not just stdout: a built app has no console, and
+	// a refresh is infrequent enough to be worth a line - it's the thing
+	// that goes quiet first when auth starts failing.
+	logging.Printf("Access token refreshed")
 	return true
 }
 
@@ -112,11 +117,12 @@ func (a *App) refreshNow() bool {
 // itself is the problem, and hammering a rejected credential is how an
 // account ends up rate limited on top of everything else.
 func retryOnAuthFailure[T any](a *App, read func(token string) (T, error)) (T, error) {
-	value, err := read(a.getToken())
+	token := a.getToken()
+	value, err := read(token)
 	if !errors.Is(err, playback.ErrAuthExpired) {
 		return value, err
 	}
-	if !a.refreshNow() {
+	if !a.refresh(token) {
 		return value, err
 	}
 	return read(a.getToken())
@@ -148,21 +154,18 @@ func (a *App) startTokenRefreshLoop() {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		a.tokenMu.RLock()
-		refresh := a.refreshTok
-		a.tokenMu.RUnlock()
-
-		if refresh == "" {
-			continue
-		}
-
-		newToken, err := backend.RefreshToken(refresh)
-		if err != nil {
-			logging.Printf("Background token refresh failed: %v", err)
-			continue
-		}
-
-		a.setTokens(newToken)
-		logging.Printf("Access token refreshed in background")
+		// Through refresh() like everything else, so a tick that lands
+		// while a command is already refreshing doesn't spend the same
+		// rotating refresh token a second time.
+		a.refresh(a.currentAccessToken())
 	}
+}
+
+// currentAccessToken reads the token without the expiry check getToken
+// does - only the refresh paths want this, to say which token they were
+// working from.
+func (a *App) currentAccessToken() string {
+	a.tokenMu.RLock()
+	defer a.tokenMu.RUnlock()
+	return a.accessToken
 }

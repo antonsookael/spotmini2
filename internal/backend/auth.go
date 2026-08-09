@@ -36,6 +36,18 @@ const defaultClientID = "da2657247b364ce1877a8bdef2a33c90"
 
 var clientID string
 
+// loginTimeout is how long the browser flow gets before it's declared
+// abandoned. Generous, because it includes finding the tab, signing in
+// and granting consent - but not unbounded, since the whole point is
+// that the app stops waiting on something that is never coming.
+const loginTimeout = 5 * time.Minute
+
+// tokenClient talks to the token endpoint with a deadline. The default
+// client has none, and this call is made while the app is waiting to
+// start - a stalled connection there hangs the launch rather than
+// failing it.
+var tokenClient = &http.Client{Timeout: 15 * time.Second}
+
 const redirectURI = "http://127.0.0.1:8888/callback"
 const scope = "user-read-playback-state user-modify-playback-state playlist-read-private user-library-read user-library-modify"
 const tokenFile = "token.json"
@@ -178,6 +190,18 @@ func startLogin() {
 	// and ":8888" put the endpoint that completes a login on the LAN.
 	server := &http.Server{Addr: "127.0.0.1:8888", Handler: mux}
 
+	// Nothing arrives if the user closes the consent tab instead of
+	// refusing, or never finds it because openBrowser failed - and a
+	// login that simply stops has no event of its own to report. Without
+	// this the startup goroutine waits on loginChan forever: no token, no
+	// error, the bar reading "Loading..." for as long as the app is open,
+	// and this server still holding port 8888.
+	abandoned := time.AfterFunc(loginTimeout, func() {
+		logging.Printf("Login abandoned after %s", loginTimeout)
+		reportLogin(loginResult{err: fmt.Errorf("login not completed within %s", loginTimeout)})
+		server.Shutdown(context.Background())
+	})
+
 	mux.HandleFunc("/callback", func(w http.ResponseWriter, r *http.Request) {
 		// Only a request that ended the flow takes the server down with
 		// it. Anything else - a stray hit on this URL, a browser
@@ -188,6 +212,8 @@ func startLogin() {
 		if !callbackHandler(w, r) {
 			return
 		}
+		// The flow ended one way or the other, so it wasn't abandoned.
+		abandoned.Stop()
 
 		// Give the browser a moment to receive the response before we
 		// shut the server down out from under it.
@@ -233,7 +259,7 @@ func RefreshToken(refresh string) (TokenResponse, error) {
 // exchangeForToken is shared by both the initial login and the refresh
 // flow - both just POST different form data to the same endpoint.
 func exchangeForToken(data url.Values) (TokenResponse, error) {
-	resp, err := http.PostForm("https://accounts.spotify.com/api/token", data)
+	resp, err := tokenClient.PostForm("https://accounts.spotify.com/api/token", data)
 	if err != nil {
 		return TokenResponse{}, fmt.Errorf("%w: %v", ErrNetwork, err)
 	}
@@ -241,7 +267,12 @@ func exchangeForToken(data url.Values) (TokenResponse, error) {
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return TokenResponse{}, err
+		// ErrNetwork like the dial failure above: the connection dropped
+		// mid-response, which says nothing about whether the refresh
+		// token is any good. Returned bare, it skipped the retry in
+		// refreshWhenReachable and sent a user with a perfectly valid
+		// token off to log in again in a browser.
+		return TokenResponse{}, fmt.Errorf("%w: %v", ErrNetwork, err)
 	}
 
 	// Spotify's error responses are still valid JSON (e.g.
@@ -283,6 +314,15 @@ func saveToken(token TokenResponse) {
 	// actually applies.
 	if err := os.WriteFile(path, data, 0600); err != nil {
 		logging.Printf("Error writing token file: %v", err)
+		return
+	}
+
+	// WriteFile's permission argument only applies when it *creates* the
+	// file, so every install that predates the 0600 change kept its
+	// world-readable 0644 no matter how many times the token was
+	// rewritten. Chmod is what actually repairs those.
+	if err := os.Chmod(path, 0600); err != nil {
+		logging.Printf("Could not restrict permissions on the token file: %v", err)
 	}
 }
 
