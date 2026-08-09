@@ -25,9 +25,6 @@ const previousRestartMs = 5000
 // all presented identically, as a keypress that did nothing at all,
 // with nothing on screen and nothing in the log to tell them apart.
 func (a *App) reportCommandFailure(name string, err error) {
-	// The two the user can actually act on get their own message; the
-	// rest fall through to the generic one, which at least points at the
-	// log rather than saying nothing.
 	if errors.Is(err, playback.ErrPremiumRequired) {
 		runtime.EventsEmit(a.ctx, "premium-required")
 		return
@@ -36,13 +33,46 @@ func (a *App) reportCommandFailure(name string, err error) {
 		runtime.EventsEmit(a.ctx, "no-device")
 		return
 	}
+
 	logging.Printf("[command] %s abandoned - could not read playback state: %v", name, err)
-	runtime.EventsEmit(a.ctx, "command-failed")
+	runtime.EventsEmit(a.ctx, "command-failed", failureMessage(err))
+}
+
+// failureMessage is what the bar says about err. Every branch names a
+// cause, because the bar is the only place this can be said: a released
+// build has no console, and telling someone to go and find a log file is
+// telling them nothing.
+//
+// Kept short enough to fit the bar at its default width - anything
+// longer is silently ellipsized, which loses the end of the sentence,
+// where the useful half tends to be.
+func failureMessage(err error) string {
+	switch {
+	case errors.Is(err, playback.ErrUnreachable):
+		return "No connection to Spotify"
+	case errors.Is(err, playback.ErrAuthExpired):
+		// Only reaches the bar once a refresh has already been tried and
+		// failed, so the login genuinely needs redoing - which restarting
+		// does, by falling through to the browser flow.
+		return "Spotify sign-in expired - restart app"
+	case errors.Is(err, playback.ErrRateLimited):
+		return "Too many requests - wait a moment"
+	case errors.Is(err, playback.ErrSpotifyDown):
+		return "Spotify is down - try again later"
+	}
+
+	// Nothing recognised it, so the status code goes in the message
+	// itself. Meaningless to most people, but it's a thing they can
+	// quote in a bug report, which "something went wrong" is not.
+	var statusErr *playback.StatusError
+	if errors.As(err, &statusErr) {
+		return fmt.Sprintf("Spotify error %d - try again", statusErr.Status)
+	}
+	return "Spotify request failed - try again"
 }
 
 func (a *App) PlayPause() {
-	token := a.getToken()
-	playing, err := playback.IsPlaying(token)
+	playing, err := retryOnAuthFailure(a, playback.IsPlaying)
 	if err != nil {
 		a.reportCommandFailure("playPause", err)
 		return
@@ -64,7 +94,7 @@ func (a *App) NextTrack() {
 // position can't be read, since that's the pre-existing behaviour and
 // better than doing nothing.
 func (a *App) PreviousTrack() {
-	state, err := playback.NowPlaying(a.getToken())
+	state, err := retryOnAuthFailure(a, playback.NowPlaying)
 	if err == nil && state.ProgressMs > previousRestartMs {
 		// Restarting the same track, so no change to wait for - only the
 		// skip below lands somewhere new.
@@ -77,8 +107,7 @@ func (a *App) PreviousTrack() {
 }
 
 func (a *App) ToggleShuffle() {
-	token := a.getToken()
-	shuffled, err := playback.IsShuffled(token)
+	shuffled, err := retryOnAuthFailure(a, playback.IsShuffled)
 	if err != nil {
 		a.reportCommandFailure("shuffle", err)
 		return
@@ -91,8 +120,7 @@ func (a *App) ToggleShuffle() {
 // ToggleLoop advances Spotify's repeat mode one step: off -> context
 // (repeat playlist/album) -> track (repeat song) -> off.
 func (a *App) ToggleLoop() {
-	token := a.getToken()
-	current, err := playback.GetRepeatState(token)
+	current, err := retryOnAuthFailure(a, playback.GetRepeatState)
 	if err != nil {
 		a.reportCommandFailure("loop", err)
 		return
@@ -104,7 +132,7 @@ func (a *App) ToggleLoop() {
 }
 
 func (a *App) GetNowPlaying() playback.PlaybackState {
-	state, err := playback.NowPlaying(a.getToken())
+	state, err := retryOnAuthFailure(a, playback.NowPlaying)
 	if err != nil {
 		return playback.PlaybackState{}
 	}
@@ -167,6 +195,19 @@ func (a *App) runPlayerCommand(name string, expectTrackChange bool, action func(
 
 	token := a.getToken()
 	err := action(token)
+
+	// A token Spotify rejects is worth one more go with a fresh one,
+	// before any of the device handling below. getToken only knows when
+	// the token was meant to expire; a 401 is the only thing that knows
+	// it actually has - revoked from the account page, invalidated by a
+	// password change, or the stale one getToken falls back to when its
+	// own refresh failed. Recovering here is why this no longer surfaces
+	// as a failed command the user is told to restart out of.
+	if errors.Is(err, playback.ErrAuthExpired) && a.refreshNow() {
+		token = a.getToken()
+		err = action(token)
+	}
+
 	revived, reviveErr := false, error(nil)
 	if errors.Is(err, playback.ErrNoActiveDevice) {
 		revived, reviveErr = a.reviveDevice(token)

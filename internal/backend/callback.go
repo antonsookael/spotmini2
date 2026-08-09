@@ -62,7 +62,10 @@ func callbackHandler(w http.ResponseWriter, r *http.Request) bool {
 	token, err := exchangeForToken(data)
 	if err != nil {
 		logging.Printf("Token exchange failed: %v", err)
-		fmt.Fprintln(w, "Something went wrong finishing the login - check the log and try again.")
+		// No mention of the log here: this page is in a browser, opened
+		// by someone who has never seen the app's settings panel, and
+		// relaunching is the whole remedy anyway.
+		fmt.Fprintln(w, "Something went wrong finishing the login. Close this tab and reopen spotmini to try again.")
 		reportLogin(loginResult{err: fmt.Errorf("exchanging code for token: %w", err)})
 		return true
 	}

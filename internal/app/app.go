@@ -54,6 +54,9 @@ type App struct {
 	accessToken    string
 	refreshTok     string
 	tokenExpiresAt time.Time
+	// When the last forced refresh failed, so a broken one isn't retried
+	// on every single request. See refreshNow.
+	refreshFailedAt time.Time
 
 	// expandedPanel is "" when collapsed, otherwise "settings" or
 	// "playlists" - only one can be open at a time, since they share

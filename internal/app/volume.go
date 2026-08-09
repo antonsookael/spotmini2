@@ -44,15 +44,13 @@ func (a *App) VolumeDown() {
 // volumeUp and volumeDown run on separate goroutines, so guarding only
 // the cache would still let both read the same starting value.
 func (a *App) adjustVolume(delta int) {
-	token := a.getToken()
-
 	a.volumeMu.Lock()
 	defer a.volumeMu.Unlock()
 
 	current := a.lastVolume
 	if time.Since(a.lastVolumeAt) >= volumeCacheWindow {
 		var err error
-		current, err = a.currentVolume(token)
+		current, err = a.currentVolume()
 		if err != nil {
 			// Same reasoning as the read-then-write commands: a volume
 			// change is relative, so a failed read leaves nothing to
@@ -89,8 +87,14 @@ func (a *App) adjustVolume(delta int) {
 // to be read as "currently 0", turning a Vol+ press into "set the
 // volume to one step" and dropping a device that had been at 70% to
 // 10% the moment the retry landed on it.
-func (a *App) currentVolume(token string) (int, error) {
-	volume, err := playback.GetVolume(token)
+// Takes no token: every read below resolves its own. The retry can
+// replace the token mid-call, and a copy passed in from the caller
+// would be the one Spotify had just refused.
+func (a *App) currentVolume() (int, error) {
+	// Through the auth retry like every other read: a volume press is
+	// often the first thing tried after the machine wakes, which is
+	// exactly when the token is most likely to have been rejected.
+	volume, err := retryOnAuthFailure(a, playback.GetVolume)
 	if !errors.Is(err, playback.ErrNoActiveDevice) {
 		return volume, err
 	}
@@ -98,7 +102,7 @@ func (a *App) currentVolume(token string) (int, error) {
 	// Returned rather than announced here: the caller runs every failure
 	// through reportCommandFailure, which turns these into the right
 	// warning. Emitting from here as well showed the message twice.
-	revived, reviveErr := a.reviveDevice(token)
+	revived, reviveErr := a.reviveDevice(a.getToken())
 	if errors.Is(reviveErr, playback.ErrPremiumRequired) {
 		// The transfer said why, and it's a better answer than the
 		// "no active device" the volume read came back with.
@@ -112,7 +116,7 @@ func (a *App) currentVolume(token string) (int, error) {
 	// uses applies to reading the volume back off the revived device.
 	for _, delay := range revivalRetryDelays {
 		time.Sleep(delay)
-		if volume, err = playback.GetVolume(token); err == nil {
+		if volume, err = playback.GetVolume(a.getToken()); err == nil {
 			return volume, nil
 		}
 	}

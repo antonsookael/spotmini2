@@ -31,16 +31,31 @@ func TestReasonsClassifyTheSameForReadsAndWrites(t *testing.T) {
 			ErrNoActiveDevice,
 		},
 		{
-			"missing scope carries no reason, so stays generic",
+			// Was generic until the bar had to name every cause. A
+			// missing scope and an expired token are indistinguishable
+			// from out here, and both are fixed by signing in again.
+			"missing scope reads as a rejected login",
 			403,
 			`{"error":{"status":403,"message":"Insufficient client scope"}}`,
-			nil,
+			ErrAuthExpired,
 		},
 		{
-			"expired token stays generic",
+			"expired token reads as a rejected login",
 			401,
 			`{"error":{"status":401,"message":"The access token expired"}}`,
-			nil,
+			ErrAuthExpired,
+		},
+		{
+			"rate limit",
+			429,
+			`{"error":{"status":429,"message":"API rate limit exceeded"}}`,
+			ErrRateLimited,
+		},
+		{
+			"spotify having a bad day",
+			503,
+			`{"error":{"status":503,"message":"Service unavailable"}}`,
+			ErrSpotifyDown,
 		},
 	}
 
@@ -59,11 +74,8 @@ func TestReasonsClassifyTheSameForReadsAndWrites(t *testing.T) {
 				if err == nil {
 					t.Fatalf("%s: expected an error", label)
 				}
-				if tc.want != nil && !errors.Is(err, tc.want) {
+				if !errors.Is(err, tc.want) {
 					t.Errorf("%s: got %v, want %v", label, err, tc.want)
-				}
-				if tc.want == nil && (errors.Is(err, ErrPremiumRequired) || errors.Is(err, ErrNoActiveDevice)) {
-					t.Errorf("%s: got sentinel %v, want a generic error", label, err)
 				}
 			}
 		})
@@ -85,5 +97,29 @@ func TestEmptyBodyIsNotAnError(t *testing.T) {
 	}
 	if body != nil {
 		t.Errorf("204 should give a nil body, got %q", body)
+	}
+}
+
+// Anything Spotify rejects with a status nobody has a name for still has
+// to carry the number, so the bar can show something quotable rather
+// than a shrug.
+func TestUnrecognisedStatusKeepsItsNumber(t *testing.T) {
+	var statusErr *StatusError
+
+	err := rejectionError("GET /me/player", 418, []byte(`{}`))
+	if !errors.As(err, &statusErr) {
+		t.Fatalf("got %v, want a *StatusError", err)
+	}
+	if statusErr.Status != 418 {
+		t.Errorf("StatusError.Status = %d, want 418", statusErr.Status)
+	}
+}
+
+// A 404 without a reason code is a genuinely missing endpoint, not an
+// idle device - classifying it as one would send the app off reviving
+// devices to fix a URL.
+func TestBareNotFoundIsNotAnIdleDevice(t *testing.T) {
+	if err := rejectionError("GET /me/player", 404, []byte(`{}`)); errors.Is(err, ErrNoActiveDevice) {
+		t.Errorf("a bare 404 classified as %v", err)
 	}
 }

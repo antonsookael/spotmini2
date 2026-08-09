@@ -28,6 +28,45 @@ var ErrNoActiveDevice = errors.New("no active device")
 // accounts outright, regardless of device state.
 var ErrPremiumRequired = errors.New("spotify premium required")
 
+// The rest of what Spotify says no with. Every one of these exists so
+// the bar can name the cause instead of describing the symptom - a
+// downloaded app has no console and nowhere to send someone for the
+// detail, so an error that isn't in the message is an error nobody will
+// ever see.
+var (
+	// ErrAuthExpired covers a rejected token and a request the granted
+	// scopes don't cover. Both mean signing in again, which is why they
+	// aren't separated: the difference changes nothing the user does.
+	ErrAuthExpired = errors.New("spotify rejected the login")
+
+	// ErrRateLimited is Spotify's 429 - self-inflicted by holding a
+	// hotkey down, and over within seconds.
+	ErrRateLimited = errors.New("too many requests")
+
+	// ErrSpotifyDown is any 5xx: their end, not ours, and not worth
+	// dressing up as anything the user can act on.
+	ErrSpotifyDown = errors.New("spotify is unavailable")
+
+	// ErrUnreachable means the request never arrived - no connection,
+	// DNS failure, a captive portal. Distinct from every other error
+	// here in that it's the one thing the user can usually fix.
+	ErrUnreachable = errors.New("could not reach spotify")
+)
+
+// StatusError is the fallback for a rejection none of the sentinels
+// above match. It keeps the status code so the bar can still show a
+// number - not meaningful on its own, but it's something to report,
+// which "something went wrong" is not.
+type StatusError struct {
+	Status int
+	Action string
+	Body   string
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("%s: spotify returned status %d: %s", e.Action, e.Status, e.Body)
+}
+
 // took formats how long a call has been running, rounded to the
 // millisecond - sub-millisecond precision is noise next to a network
 // round trip, and the full float makes the log lines hard to scan.
@@ -68,6 +107,33 @@ func reasonError(status int, body []byte) error {
 	return nil
 }
 
+// rejectionError turns any non-2xx response into the most specific
+// error available: a reason code first, then the status class, and
+// failing both a StatusError carrying the number.
+//
+// Every branch returns something a caller can name in the bar, which is
+// the point - the generic case used to swallow a 401 and a 429 alike
+// and leave the UI with nothing to say about either.
+func rejectionError(action string, status int, body []byte) error {
+	if err := reasonError(status, body); err != nil {
+		return err
+	}
+
+	switch {
+	case status == http.StatusUnauthorized || status == http.StatusForbidden:
+		// 403 only reaches here when it carried no reason code, which in
+		// practice means the token lacks the scope for this endpoint -
+		// the same fix as an expired one.
+		return ErrAuthExpired
+	case status == http.StatusTooManyRequests:
+		return ErrRateLimited
+	case status >= 500:
+		return ErrSpotifyDown
+	}
+
+	return &StatusError{Status: status, Action: action, Body: string(body)}
+}
+
 // doPlayerGet issues a read against the player API and returns the raw
 // response body, or a nil body for the 204 Spotify answers with when
 // nothing is active at all.
@@ -92,7 +158,11 @@ func doPlayerGet(url, accessToken string) ([]byte, error) {
 	resp, err := client.Do(req)
 	if err != nil {
 		logging.Printf("[spotify] %s -> %v in %s", action, err, took(start))
-		return nil, err
+		// Wrapped rather than passed through: a transport failure is the
+		// one error here the user can usually do something about, and it
+		// reaches the bar as "check your connection" only if the caller
+		// can tell it apart from a rejection.
+		return nil, fmt.Errorf("%w: %v", ErrUnreachable, err)
 	}
 	defer resp.Body.Close()
 
@@ -110,10 +180,7 @@ func doPlayerGet(url, accessToken string) ([]byte, error) {
 		// account isn't Premium has to reach the caller as
 		// ErrPremiumRequired, or it can only be reported as an
 		// unexplained failure.
-		if reason := reasonError(resp.StatusCode, body); reason != nil {
-			return nil, reason
-		}
-		return nil, fmt.Errorf("%s: spotify returned status %d: %s", action, resp.StatusCode, string(body))
+		return nil, rejectionError(action, resp.StatusCode, body)
 	}
 
 	fmt.Printf("[spotify] %s -> %d in %s\n", action, resp.StatusCode, took(start))
@@ -153,7 +220,7 @@ func doPlayerRequest(method, url, accessToken string, body io.Reader) error {
 		// Never reached Spotify at all - worth recording, since from the
 		// user's side it looks identical to a command being ignored.
 		logging.Printf("[spotify] %s -> %v in %s", action, err, took(start))
-		return err
+		return fmt.Errorf("%w: %v", ErrUnreachable, err)
 	}
 	defer resp.Body.Close()
 
@@ -179,11 +246,7 @@ func doPlayerRequest(method, url, accessToken string, body io.Reader) error {
 	// contain a stray % that would otherwise be read as a verb.
 	logging.Printf("%s", line)
 
-	if reason := reasonError(resp.StatusCode, respBody); reason != nil {
-		return reason
-	}
-
 	// Carries the endpoint so callers that only surface the error - like
 	// the revival retry loop - still say which command it was.
-	return fmt.Errorf("%s: spotify returned status %d: %s", action, resp.StatusCode, string(respBody))
+	return rejectionError(action, resp.StatusCode, respBody)
 }
