@@ -13,7 +13,9 @@ import (
 // a credential Spotify just refused is how an account earns a rate limit
 // on top of the problem it already has.
 func TestRetryOnAuthFailureDoesNotRetryWithoutARefreshToken(t *testing.T) {
-	a := &App{}
+	// Signed in, but with no refresh token behind it - an access token
+	// is needed for the read to be attempted at all.
+	a := &App{accessToken: "signed-in"}
 	calls := 0
 
 	_, err := retryOnAuthFailure(a, func(string) (int, error) {
@@ -32,7 +34,7 @@ func TestRetryOnAuthFailureDoesNotRetryWithoutARefreshToken(t *testing.T) {
 // Anything that isn't an auth rejection must not trigger a refresh or a
 // second attempt - a rate limit retried immediately is the worst case.
 func TestRetryOnAuthFailureLeavesOtherErrorsAlone(t *testing.T) {
-	a := &App{}
+	a := &App{accessToken: "signed-in"}
 
 	for _, err := range []error{playback.ErrRateLimited, playback.ErrNoActiveDevice, playback.ErrUnreachable} {
 		calls := 0
@@ -51,10 +53,33 @@ func TestRetryOnAuthFailureLeavesOtherErrorsAlone(t *testing.T) {
 
 // The happy path must not disturb the value it is passing through.
 func TestRetryOnAuthFailureReturnsTheValue(t *testing.T) {
-	a := &App{}
+	a := &App{accessToken: "signed-in"}
 	got, err := retryOnAuthFailure(a, func(string) (int, error) { return 42, nil })
 	if err != nil || got != 42 {
 		t.Errorf("got (%d, %v), want (42, nil)", got, err)
+	}
+}
+
+// A read before the launch sign-in has produced a token must not reach
+// Spotify at all. The request would go out with an empty bearer token,
+// and the 401 it earns is indistinguishable from a credential that has
+// gone bad - which is what sent the poll into reauthorize two seconds
+// into a first run, deleting the saved token and opening a second
+// consent tab over the one already on screen.
+func TestReadsWaitForTheFirstTokenInsteadOfAsking(t *testing.T) {
+	a := &App{}
+	called := false
+
+	_, err := retryOnAuthFailure(a, func(string) (int, error) {
+		called = true
+		return 0, nil
+	})
+
+	if called {
+		t.Error("read was sent to Spotify with no token to send")
+	}
+	if !errors.Is(err, errNotSignedIn) {
+		t.Errorf("err = %v, want errNotSignedIn", err)
 	}
 }
 

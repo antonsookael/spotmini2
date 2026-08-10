@@ -48,6 +48,12 @@ func (a *App) reportCommandFailure(name string, err error) {
 // where the useful half tends to be.
 func failureMessage(err error) string {
 	switch {
+	case errors.Is(err, errNotSignedIn):
+		// The launch sign-in hasn't produced a token yet. Nothing has
+		// gone wrong and it clears itself, but on a first run a browser
+		// window is sitting somewhere waiting to be dealt with, and the
+		// bar otherwise says nothing at all about why it's empty.
+		return "Signing in to Spotify..."
 	case errors.Is(err, playback.ErrUnreachable):
 		return "No connection to Spotify"
 	case errors.Is(err, playback.ErrAuthExpired):

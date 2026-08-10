@@ -15,6 +15,7 @@ func TestFailureMessageNamesEveryCause(t *testing.T) {
 		err  error
 		want string
 	}{
+		{"no token yet", errNotSignedIn, "Signing in to Spotify..."},
 		{"unreachable", fmt.Errorf("%w: dial tcp", playback.ErrUnreachable), "No connection to Spotify"},
 		{"auth", playback.ErrAuthExpired, "Spotify sign-in expired - signing in again"},
 		{"rate limited", playback.ErrRateLimited, "Too many requests - wait a moment"},

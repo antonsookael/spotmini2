@@ -66,6 +66,34 @@ func TestSignInIsAllowedAgainAfterTheCooldown(t *testing.T) {
 	}
 }
 
+// The sign-in that runs at launch has to hold the same claim a
+// mid-session one does. Until it lands there is no token, so every read
+// the frontend's poll makes takes the auth-failure path - and without
+// the claim already held, that path starts a second login flow against
+// the first. Both share the callback port, the PKCE verifier and the
+// state parameter, so the consent the user completes comes back
+// unrecognised and neither flow can finish.
+func TestTheLaunchSignInHoldsTheClaim(t *testing.T) {
+	a := &App{}
+	a.claimLaunchSignIn()
+
+	if decision, _ := a.claimReauth(); decision != reauthInFlight {
+		t.Errorf("a read during the launch sign-in: got %v, want reauthInFlight", decision)
+	}
+}
+
+// And gives it back when it ends, or a token that goes bad later in the
+// session could never be replaced.
+func TestTheClaimIsFreeOnceTheLaunchSignInEnds(t *testing.T) {
+	a := &App{}
+	a.claimLaunchSignIn()
+	a.releaseSignIn()
+
+	if decision, _ := a.claimReauth(); decision != reauthClaimed {
+		t.Errorf("after the launch sign-in: got %v, want reauthClaimed", decision)
+	}
+}
+
 // A flow that failed or was abandoned proves nothing about the account,
 // so it must not spend the single attempt.
 func TestAFailedSignInDoesNotSpendTheBudget(t *testing.T) {

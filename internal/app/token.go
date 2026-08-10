@@ -119,6 +119,18 @@ func (a *App) refresh(usedToken string) bool {
 	return true
 }
 
+// errNotSignedIn is what a read answers with while the launch sign-in
+// is still running and there is no token to send yet.
+//
+// It exists because the alternative is worse than a wasted request:
+// Spotify answers an empty bearer token with a 401, and a 401 is
+// exactly what a credential gone bad looks like. The frontend starts
+// polling the moment the page loads, seconds before a first-run login
+// can possibly have finished, so that 401 used to send the poll down
+// the auth-failure path - deleting the saved token and starting a
+// second login flow against the one the user was already looking at.
+var errNotSignedIn = errors.New("not signed in yet")
+
 // retryOnAuthFailure runs read, and if Spotify rejected the token,
 // refreshes it and runs read once more.
 //
@@ -127,6 +139,14 @@ func (a *App) refresh(usedToken string) bool {
 // account ends up rate limited on top of everything else.
 func retryOnAuthFailure[T any](a *App, read func(token string) (T, error)) (T, error) {
 	token := a.getToken()
+	// Empty only before the launch sign-in lands: nothing clears the
+	// in-memory token afterwards, not even a re-login that fails. So
+	// this is "no token yet", never "the token went away".
+	if token == "" {
+		var zero T
+		return zero, errNotSignedIn
+	}
+
 	value, err := read(token)
 	if !errors.Is(err, playback.ErrAuthExpired) {
 		return value, err
@@ -225,6 +245,59 @@ func (a *App) claimReauth() (reauthDecision, time.Duration) {
 	return reauthClaimed, 0
 }
 
+// claimLaunchSignIn marks the sign-in that runs at launch as the one in
+// flight, so anything that finds itself without a working token while
+// it runs leaves it alone instead of starting a rival flow.
+//
+// Unconditional, unlike claimReauth: this runs from startup, before the
+// frontend has loaded and before a hotkey can fire, so there is nothing
+// else that could be holding the claim yet.
+func (a *App) claimLaunchSignIn() {
+	a.reauthMu.Lock()
+	defer a.reauthMu.Unlock()
+	a.reauthorizing = true
+}
+
+// releaseSignIn hands the claim back, whatever the outcome was. Shared
+// by both flows, so the launch sign-in and a mid-session re-login can
+// never both believe they hold it.
+func (a *App) releaseSignIn() {
+	a.reauthMu.Lock()
+	defer a.reauthMu.Unlock()
+	a.reauthorizing = false
+}
+
+// launchSignIn resolves a token at startup - reusing the saved one,
+// refreshing it, or falling back to the browser flow - and reports
+// whether the app ended up with one.
+//
+// It holds the sign-in claim for the whole thing, browser wait
+// included, which can run to minutes. That is the point rather than a
+// side effect: everything else that finds a token Spotify won't accept
+// asks reauthorize to replace it, and while this is running a
+// replacement is already on its way.
+func (a *App) launchSignIn() bool {
+	defer a.releaseSignIn()
+
+	token, err := backend.GetAccessTokenFull()
+	if err != nil {
+		// Nothing here can recover: there's no token, so every
+		// playback call would fail, and the login flow has already
+		// ended. Saying so in the bar is the whole point - the app
+		// otherwise sits on "Loading..." forever, looking hung.
+		logging.Printf("Login failed: %v", err)
+		runtime.EventsEmit(a.ctx, "login-failed")
+		return false
+	}
+
+	// Stored before the deferred release, so there is never an instant
+	// where the claim is free and the token is still empty - which is
+	// the exact state a poll turns into a second login.
+	a.setTokens(token)
+	runtime.EventsEmit(a.ctx, "logged-in")
+	return true
+}
+
 func (a *App) reauthorize() {
 	// Every part of this is user-facing - it opens a browser, deletes a
 	// credential and talks to the bar - so without a live window there
@@ -246,11 +319,7 @@ func (a *App) reauthorize() {
 	}
 
 	go func() {
-		defer func() {
-			a.reauthMu.Lock()
-			a.reauthorizing = false
-			a.reauthMu.Unlock()
-		}()
+		defer a.releaseSignIn()
 
 		logging.Printf("Spotify rejected the token even after refreshing it - asking for consent again")
 

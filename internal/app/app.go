@@ -10,10 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"golang.design/x/hotkey"
 
-	"spotmini-gui/internal/backend"
 	"spotmini-gui/internal/hotkeys"
 	"spotmini-gui/internal/logging"
 )
@@ -129,21 +127,27 @@ func (a *App) startup(ctx context.Context) {
 
 	a.restoreWindowPosition()
 
+	// Claimed out here rather than inside the goroutine below: the
+	// frontend starts polling as soon as the page loads, which on a
+	// first run is minutes before a browser login can have finished, so
+	// there is a long window where its reads find no token. Whatever
+	// runs first has to be the thing already holding the claim, or the
+	// auth-failure path those reads take starts a second login against
+	// this one - and two flows share the callback port, the PKCE
+	// verifier and the state parameter, so the consent the user
+	// actually completes comes back unrecognised and neither finishes.
+	a.claimLaunchSignIn()
+
 	go func() {
-		token, err := backend.GetAccessTokenFull()
-		if err != nil {
-			// Nothing here can recover: there's no token, so every
-			// playback call would fail, and the login flow has already
-			// ended. Saying so in the bar is the whole point - the app
-			// otherwise sits on "Loading..." forever, looking hung.
-			logging.Printf("Login failed: %v", err)
-			runtime.EventsEmit(a.ctx, "login-failed")
+		if !a.launchSignIn() {
 			return
 		}
 
-		a.setTokens(token)
-		runtime.EventsEmit(a.ctx, "logged-in")
-
+		// Started outside launchSignIn, which releases the claim as it
+		// returns: this loop never returns, so releasing from in there
+		// would leave a sign-in marked as running for the life of the
+		// app, and nothing could ever replace a token that later went
+		// bad.
 		a.startTokenRefreshLoop()
 	}()
 
