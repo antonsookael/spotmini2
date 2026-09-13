@@ -13,3 +13,8 @@ func monitorBoundsAt(x, y int) (left, top, right, bottom int, ok bool) {
 func workAreaOriginAt(x, y int) (originX, originY int, ok bool) {
 	return 0, 0, false
 }
+
+// Only Windows moves the window natively; see screen_windows.go.
+func moveWindowNative(x, y int) bool {
+	return false
+}

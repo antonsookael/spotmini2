@@ -79,3 +79,9 @@ func monitorBoundsAt(x, y int) (left, top, right, bottom int, ok bool) {
 func workAreaOriginAt(x, y int) (originX, originY int, ok bool) {
 	return 0, 0, false
 }
+
+// moveWindowNative is a Windows workaround; WindowSetPosition is already
+// correct on macOS.
+func moveWindowNative(x, y int) bool {
+	return false
+}

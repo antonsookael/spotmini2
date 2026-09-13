@@ -83,20 +83,11 @@ type App struct {
 	hotkeyConfig  hotkeys.HotkeyConfig
 	activeHotkeys map[string]*hotkey.Hotkey
 
-	dragMu             sync.Mutex
-	dragActive         bool
-	dragOriginX        int
-	dragOriginY        int
-	dragOriginResolved bool
-	dragWidth          int
-	dragHeight         int
-	// Bounds of the monitor dragOrigin was resolved against, so a drag
-	// that crosses onto another one can tell it has to resolve again.
-	dragMonLeft   int
-	dragMonTop    int
-	dragMonRight  int
-	dragMonBottom int
-	dragMonOK     bool
+	dragMu                sync.Mutex
+	dragActive            bool
+	dragNeedsCompensation bool
+	dragWidth             int
+	dragHeight            int
 
 	volumeMu     sync.Mutex
 	lastVolume   int

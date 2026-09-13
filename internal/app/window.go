@@ -98,9 +98,14 @@ func (a *App) SetWindowWidth(width int) {
 }
 
 // setAbsoluteWindowPosition moves the window to an absolute desktop
-// coordinate. Windows needs compensation first (see workAreaOriginAt);
-// elsewhere it's a passthrough.
+// coordinate. Windows needs its own move call (see moveWindowNative),
+// with work-area compensation as the fallback if that can't find the
+// window; elsewhere it's a passthrough.
 func (a *App) setAbsoluteWindowPosition(x, y int) {
+	if moveWindowNative(x, y) {
+		return
+	}
+
 	curX, curY := runtime.WindowGetPosition(a.ctx)
 	width, height := runtime.WindowGetSize(a.ctx)
 
@@ -112,24 +117,17 @@ func (a *App) setAbsoluteWindowPosition(x, y int) {
 	runtime.WindowSetPosition(a.ctx, x-originX, y-originY)
 }
 
-// BeginDrag resolves the coordinate-compensation origin (see
-// workAreaOriginAt) once per drag so DragWindowTo can reuse it. Doing
-// it per-mousemove instead cost two syscalls plus a size query every
-// frame, which made dragging visibly laggy.
+// BeginDrag caches what DragWindowTo needs once per drag. Querying it
+// per mousemove instead cost a size query plus syscalls every frame,
+// which made dragging visibly laggy.
 func (a *App) BeginDrag() {
 	x, y := runtime.WindowGetPosition(a.ctx)
 	width, height := runtime.WindowGetSize(a.ctx)
-	originX, originY, ok := workAreaOriginAt(x+width/2, y+height/2)
-
-	left, top, right, bottom, boundsOK := monitorBoundsAt(x+width/2, y+height/2)
+	_, _, needsCompensation := workAreaOriginAt(x+width/2, y+height/2)
 
 	a.dragMu.Lock()
 	a.dragActive = true
-	a.dragOriginResolved = ok
-	a.dragOriginX, a.dragOriginY = originX, originY
-	a.dragMonLeft, a.dragMonTop = left, top
-	a.dragMonRight, a.dragMonBottom = right, bottom
-	a.dragMonOK = boundsOK
+	a.dragNeedsCompensation = needsCompensation
 	// Cached so clampToScreen doesn't need a size query every frame.
 	// Auto-fit could resize mid-drag if the song changes, leaving this
 	// slightly stale for a frame or two - only enough to shift the
@@ -139,7 +137,7 @@ func (a *App) BeginDrag() {
 }
 
 // EndDrag marks the drag finished, so a stray DragWindowTo arriving
-// after mouseup resolves a fresh origin instead of a stale cached one.
+// after mouseup isn't clamped against stale drag state.
 func (a *App) EndDrag() {
 	a.dragMu.Lock()
 	a.dragActive = false
@@ -153,12 +151,8 @@ func (a *App) EndDrag() {
 func (a *App) DragWindowTo(x, y int) {
 	a.dragMu.Lock()
 	active := a.dragActive
-	resolved := a.dragOriginResolved
-	originX, originY := a.dragOriginX, a.dragOriginY
+	needsCompensation := a.dragNeedsCompensation
 	width, height := a.dragWidth, a.dragHeight
-	monLeft, monTop := a.dragMonLeft, a.dragMonTop
-	monRight, monBottom := a.dragMonRight, a.dragMonBottom
-	monOK := a.dragMonOK
 	a.dragMu.Unlock()
 
 	if !active {
@@ -172,43 +166,15 @@ func (a *App) DragWindowTo(x, y int) {
 	// so dragging back inwards picks the window up again straight away.
 	x, y = clampToScreen(x, y, width, height)
 
-	if !resolved {
-		runtime.WindowSetPosition(a.ctx, x, y)
+	// Windows goes through setAbsoluteWindowPosition, which is a single
+	// SetWindowPos there. Everywhere else WindowSetPosition is already
+	// absolute, and going through the helper would only add the
+	// position and size queries its fallback path needs.
+	if needsCompensation {
+		a.setAbsoluteWindowPosition(x, y)
 		return
 	}
-
-	// The compensation origin belongs to one monitor, and Windows
-	// re-evaluates which monitor the window is on for every SetPos - so
-	// the moment a drag carries the window across a shared edge, a
-	// cached origin is compensating against the wrong screen. On a
-	// display at virtual x=-1920 that is a full screen's worth of error:
-	// the window teleports and then trails the cursor for the rest of
-	// the drag.
-	//
-	// Re-resolved only on the crossing rather than every frame, which is
-	// what the cache exists to avoid: the comparison below is arithmetic
-	// on values already in hand, and the syscalls only happen on the few
-	// frames that actually change monitor.
-	centreX, centreY := x+width/2, y+height/2
-	if monOK && (centreX < monLeft || centreX >= monRight || centreY < monTop || centreY >= monBottom) {
-		if newX, newY, ok := workAreaOriginAt(centreX, centreY); ok {
-			originX, originY = newX, newY
-			left, top, right, bottom, boundsOK := monitorBoundsAt(centreX, centreY)
-
-			a.dragMu.Lock()
-			// Only if this drag is still the current one - a stray frame
-			// arriving after mouseup must not re-arm the cache.
-			if a.dragActive {
-				a.dragOriginX, a.dragOriginY = newX, newY
-				a.dragMonLeft, a.dragMonTop = left, top
-				a.dragMonRight, a.dragMonBottom = right, bottom
-				a.dragMonOK = boundsOK
-			}
-			a.dragMu.Unlock()
-		}
-	}
-
-	runtime.WindowSetPosition(a.ctx, x-originX, y-originY)
+	runtime.WindowSetPosition(a.ctx, x, y)
 }
 
 // currentScreen returns the screen the window currently sits on (or the
