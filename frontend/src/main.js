@@ -6,6 +6,9 @@ import {
   ToggleSettingsPanel,
   TogglePlaylistsPanel,
   ToggleHotkeysPanel,
+  ToggleFavoritesPanel,
+  GetLocalStats,
+  GetSpotifyTop,
   GetPlaylists,
   PlayPlaylist,
   PlayLikedSongs,
@@ -534,9 +537,13 @@ EventsOn('panel-changed', (panel) => {
   document.getElementById('settings-panel').classList.toggle('hidden', panel !== 'settings')
   document.getElementById('playlists-panel').classList.toggle('hidden', panel !== 'playlists')
   document.getElementById('hotkeys-panel').classList.toggle('hidden', panel !== 'hotkeys')
+  document.getElementById('favorites-panel').classList.toggle('hidden', panel !== 'favorites')
 
   if (panel === 'playlists') {
     openPlaylistsPanel()
+  }
+  if (panel === 'favorites') {
+    renderStats()
   }
   updatePanelHeight()
 })
@@ -549,15 +556,16 @@ const PANEL_MAX_HEIGHT = 340
 
 function updatePanelHeight() {
   const panel = document.querySelector(
-    '#settings-panel:not(.hidden), #playlists-panel:not(.hidden), #hotkeys-panel:not(.hidden)'
+    '#settings-panel:not(.hidden), #playlists-panel:not(.hidden), #hotkeys-panel:not(.hidden), #favorites-panel:not(.hidden)'
   )
   if (!panel) return
 
   // Playlists is fixed rather than measured. Its list loads
   // asynchronously, so measuring on open catches it empty - and even
   // once loaded, sizing to it would make the window jump on every
-  // keystroke as the search filters the list down.
-  if (panel.id === 'playlists-panel') {
+  // keystroke as the search filters the list down. Favorites loads the
+  // same way, and would jump on every range switch.
+  if (panel.id === 'playlists-panel' || panel.id === 'favorites-panel') {
     SetPanelHeight(PANEL_MAX_HEIGHT)
     return
   }
@@ -1161,6 +1169,161 @@ document.getElementById('hotkeys-open-btn').addEventListener('click', () => {
 
 document.getElementById('hotkeys-back-btn').addEventListener('click', () => {
   ToggleSettingsPanel()
+})
+
+// --- Favorites & stats panel ---
+const statsTabEl = document.getElementById('stats-tab')
+const rangeButtons = document.querySelectorAll('#favorites-panel .range-switch button')
+
+let statsRange = localStorage.getItem('statsRange') || 'short_term'
+// Bumped per render so a slow answer for a range the user has already
+// switched away from doesn't overwrite the one they're looking at.
+let statsSeq = 0
+// Where the panel was opened from, which is where back goes.
+let favoritesOrigin = 'settings'
+
+function showRange() {
+  for (const btn of rangeButtons) {
+    btn.classList.toggle('active', btn.dataset.range === statsRange)
+  }
+}
+showRange()
+
+for (const btn of rangeButtons) {
+  btn.addEventListener('click', () => {
+    if (btn.dataset.range === statsRange) return
+    statsRange = btn.dataset.range
+    localStorage.setItem('statsRange', statsRange)
+    showRange()
+    renderStats()
+  })
+}
+
+function formatMinutes(minutes) {
+  if (minutes < 60) return `${minutes}m`
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
+}
+
+function makeEl(tag, className, text) {
+  const el = document.createElement(tag)
+  if (className) el.className = className
+  if (text !== undefined) el.textContent = text
+  return el
+}
+
+// A song row that plays the song when clicked, with detail (a play
+// count, a rank) on the right.
+function statTrackRow(track, detail) {
+  const row = makeEl('div', 'track-item')
+  const info = makeEl('div', 'track-item-info')
+  info.appendChild(makeEl('div', 'track-item-name', track.name))
+  info.appendChild(makeEl('div', 'track-item-artist', track.artist))
+  row.appendChild(info)
+  row.appendChild(makeEl('span', 'stat-detail', detail))
+  row.addEventListener('click', () => {
+    PlayTrack(track.uri)
+    showPendingTrack(track)
+  })
+  return row
+}
+
+function statArtistRow(name, detail) {
+  const row = makeEl('div', 'artist-row')
+  row.appendChild(makeEl('span', 'artist-row-name', name))
+  row.appendChild(makeEl('span', 'stat-detail', detail))
+  return row
+}
+
+function dayChart(days) {
+  const wrap = makeEl('div')
+  const chart = makeEl('div', 'day-chart')
+  const most = Math.max(1, ...days.map((d) => d.minutes))
+  for (const d of days) {
+    const bar = makeEl('div', 'day-bar')
+    bar.style.height = `${Math.max(2, (d.minutes / most) * 100)}%`
+    const label = new Date(`${d.day}T00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+    bar.title = `${label}: ${formatMinutes(d.minutes)}`
+    chart.appendChild(bar)
+  }
+  wrap.appendChild(chart)
+  const labels = makeEl('div', 'day-chart-labels')
+  labels.appendChild(makeEl('span', '', '2 weeks ago'))
+  labels.appendChild(makeEl('span', '', 'today'))
+  wrap.appendChild(labels)
+  return wrap
+}
+
+async function renderStats() {
+  const seq = ++statsSeq
+  const range = statsRange
+  statsTabEl.replaceChildren(makeEl('div', 'playlist-empty', 'Loading...'))
+
+  const [localResult, topResult] = await Promise.allSettled([GetLocalStats(range), GetSpotifyTop(range)])
+  if (seq !== statsSeq) return
+
+  const out = []
+  const section = (title) => out.push(makeEl('div', 'results-divider', title))
+
+  if (localResult.status === 'fulfilled') {
+    const local = localResult.value
+    const since = new Date(local.since).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+    out.push(makeEl('div', 'stats-summary', `${local.plays} plays · ${formatMinutes(local.minutes)} listened`))
+    out.push(makeEl('div', 'stats-note', `Counted by spotmini since ${since}`))
+
+    section('Listening time')
+    out.push(dayChart(local.days || []))
+
+    const rising = local.rising || []
+    if (rising.length > 0) {
+      section('Rising')
+      for (const t of rising) out.push(statTrackRow(t, `${t.plays_this_week} this week`))
+    }
+
+    section('Your most played')
+    const tracks = local.tracks || []
+    if (tracks.length === 0) {
+      out.push(makeEl('div', 'playlist-empty', 'Nothing yet - plays are counted as you listen'))
+    }
+    for (const t of tracks) {
+      const detail = t.plays_this_week > 0 ? `${t.plays} plays · ${t.plays_this_week} this week` : `${t.plays} plays`
+      out.push(statTrackRow(t, detail))
+    }
+
+    const artists = local.artists || []
+    if (artists.length > 0) {
+      section('Your artists')
+      for (const a of artists) out.push(statArtistRow(a.name, `${a.plays} plays · ${formatMinutes(a.minutes)}`))
+    }
+  } else {
+    out.push(makeEl('div', 'playlist-empty', 'Could not load your play history'))
+  }
+
+  section("Spotify's top songs")
+  if (topResult.status === 'fulfilled') {
+    const topTracks = (topResult.value.tracks || []).slice(0, 20)
+    topTracks.forEach((t, i) => out.push(statTrackRow(t, `#${i + 1}`)))
+    section("Spotify's top artists")
+    const topArtists = topResult.value.artists || []
+    topArtists.forEach((a, i) => out.push(statArtistRow(a.name, `#${i + 1}`)))
+  } else {
+    out.push(makeEl('div', 'playlist-empty', String((topResult.reason && topResult.reason.message) || topResult.reason)))
+  }
+
+  statsTabEl.replaceChildren(...out)
+  statsTabEl.scrollTop = 0
+}
+
+document.getElementById('stats-open-btn').addEventListener('click', () => {
+  favoritesOrigin = 'settings'
+  ToggleFavoritesPanel()
+})
+
+document.getElementById('favorites-back-btn').addEventListener('click', () => {
+  if (favoritesOrigin === 'playlists') {
+    TogglePlaylistsPanel()
+  } else {
+    ToggleSettingsPanel()
+  }
 })
 
 // Stamped in at build time (see internal/app/version.go); reads "dev"

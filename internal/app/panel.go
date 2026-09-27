@@ -24,6 +24,11 @@ func (a *App) ToggleHotkeysPanel() {
 	a.togglePanel("hotkeys")
 }
 
+// ToggleFavoritesPanel opens/closes the favorites and stats panel.
+func (a *App) ToggleFavoritesPanel() {
+	a.togglePanel("favorites")
+}
+
 // ToggleAlwaysOnTop lets the frontend flip the setting - it owns the
 // value (localStorage) and the checkbox, so flipping it here would
 // desync both.

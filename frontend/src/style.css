@@ -444,7 +444,8 @@ body {
   margin-bottom: 0;
 }
 
-#hotkeys-back-btn {
+#hotkeys-back-btn,
+.panel-back-btn {
   width: 20px;
   height: 20px;
   flex-shrink: 0;
@@ -458,7 +459,8 @@ body {
   cursor: pointer;
 }
 
-#hotkeys-back-btn:hover {
+#hotkeys-back-btn:hover,
+.panel-back-btn:hover {
   opacity: 1;
   color: var(--accent-color);
   background: rgba(255, 255, 255, 0.08);
@@ -492,6 +494,126 @@ body {
   background: rgba(255, 255, 255, 0.05);
   font-size: 11px;
   color: var(--fg);
+}
+
+/* --- Favorites & stats panel. Plain first pass, restyled later. --- */
+#favorites-panel {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--fg);
+  padding: 12px;
+  border-top: 1px solid #282828;
+  font-family: -apple-system, "Segoe UI", sans-serif;
+}
+
+.panel-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.panel-tab {
+  padding: 2px 4px;
+  border: none;
+  background: none;
+  color: var(--fg);
+  opacity: 0.6;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.panel-tab.active {
+  opacity: 1;
+  color: var(--accent-color);
+}
+
+.range-switch {
+  margin-left: auto;
+  display: flex;
+  gap: 2px;
+}
+
+.range-switch button {
+  padding: 2px 6px;
+  border: 1px solid #282828;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--fg);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.range-switch button.active {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+}
+
+.panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.stats-summary {
+  font-size: 12px;
+  padding: 2px 8px;
+}
+
+.stats-note {
+  font-size: 10px;
+  color: #757575;
+  padding: 0 8px;
+}
+
+.day-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 48px;
+  padding: 4px 8px 2px;
+}
+
+.day-bar {
+  flex: 1;
+  background: var(--accent-color);
+  opacity: 0.8;
+  border-radius: 2px 2px 0 0;
+}
+
+.day-chart-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: #757575;
+  padding: 0 8px;
+}
+
+.stat-detail {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: #757575;
+}
+
+.artist-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.artist-row-name {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Reads as an action rather than a setting value, so it's styled like

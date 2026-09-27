@@ -106,6 +106,9 @@ type App struct {
 	updateInfo *UpdateInfo
 
 	stats *stats.Service
+
+	topMu    sync.Mutex
+	topCache map[string]cachedTop
 }
 
 // New returns an App ready to be handed to Wails. Everything that needs
