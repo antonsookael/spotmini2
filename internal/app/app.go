@@ -14,6 +14,7 @@ import (
 
 	"spotmini-gui/internal/hotkeys"
 	"spotmini-gui/internal/logging"
+	"spotmini-gui/internal/stats"
 )
 
 const (
@@ -103,6 +104,8 @@ type App struct {
 	// the event announcing it can land before anything is listening.
 	updateMu   sync.Mutex
 	updateInfo *UpdateInfo
+
+	stats *stats.Service
 }
 
 // New returns an App ready to be handed to Wails. Everything that needs
@@ -115,6 +118,9 @@ func New() *App {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+
+	// Before anything can read playback: every read is fed to it.
+	a.stats = stats.Open()
 
 	a.restoreWindowPosition()
 
@@ -133,6 +139,8 @@ func (a *App) startup(ctx context.Context) {
 		if !a.launchSignIn() {
 			return
 		}
+
+		go a.backfillHistoryLoop()
 
 		// Started outside launchSignIn, which releases the claim as it
 		// returns: this loop never returns, so releasing from in there

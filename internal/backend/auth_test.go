@@ -2,6 +2,8 @@ package backend
 
 import (
 	"encoding/json"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -96,5 +98,29 @@ func TestTokenFileWithoutExpiryRefreshes(t *testing.T) {
 	}
 	if token.stillValid() {
 		t.Error("a token file predating ExpiresAt must not be treated as usable")
+	}
+}
+
+func TestMissingScopes(t *testing.T) {
+	if got := (TokenResponse{Scope: scope}).missingScopes(); len(got) != 0 {
+		t.Errorf("a grant covering every scope reported missing %v", got)
+	}
+
+	// Spotify doesn't promise to echo scopes back in the order they were
+	// asked for.
+	reversed := strings.Fields(scope)
+	slices.Reverse(reversed)
+	if got := (TokenResponse{Scope: strings.Join(reversed, " ")}).missingScopes(); len(got) != 0 {
+		t.Errorf("a reordered grant reported missing %v", got)
+	}
+
+	old := "user-read-playback-state user-modify-playback-state playlist-read-private user-library-read user-library-modify"
+	got := (TokenResponse{Scope: old}).missingScopes()
+	if !slices.Equal(got, []string{"user-top-read", "user-read-recently-played"}) {
+		t.Errorf("a grant from before stats reported missing %v", got)
+	}
+
+	if got := (TokenResponse{}).missingScopes(); len(got) != len(strings.Fields(scope)) {
+		t.Errorf("a token file with no recorded scope should be missing all of them, got %v", got)
 	}
 }

@@ -165,6 +165,7 @@ func (a *App) GetNowPlaying() (playback.PlaybackState, error) {
 		logging.Printf("[command] now-playing read failed: %v", err)
 		return playback.PlaybackState{}, errors.New(failureMessage(err))
 	}
+	a.stats.Observe(state)
 	return state, nil
 }
 

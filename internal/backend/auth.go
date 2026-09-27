@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -49,7 +50,7 @@ const loginTimeout = 5 * time.Minute
 var tokenClient = &http.Client{Timeout: 15 * time.Second}
 
 const redirectURI = "http://127.0.0.1:8888/callback"
-const scope = "user-read-playback-state user-modify-playback-state playlist-read-private user-library-read user-library-modify"
+const scope = "user-read-playback-state user-modify-playback-state playlist-read-private user-library-read user-library-modify user-top-read user-read-recently-played"
 const tokenFile = "token.json"
 
 // loginResult is the outcome of one browser login flow: a token, or the
@@ -105,6 +106,25 @@ type TokenResponse struct {
 	// lets a later launch tell whether the token is still usable
 	// instead of refreshing unconditionally to find out.
 	ExpiresAt time.Time `json:"expires_at"`
+
+	// Scope is what the grant actually covers, space-separated as Spotify
+	// sends it. Kept so a build that asks for more can tell a saved grant
+	// falls short before any request is refused for it.
+	Scope string `json:"scope"`
+}
+
+// missingScopes lists the scopes this build asks for that the grant
+// doesn't cover. A token file from before Scope was recorded reports
+// all of them, which is what sends older installs through consent once.
+func (t TokenResponse) missingScopes() []string {
+	granted := strings.Fields(t.Scope)
+	var missing []string
+	for _, s := range strings.Fields(scope) {
+		if !slices.Contains(granted, s) {
+			missing = append(missing, s)
+		}
+	}
+	return missing
 }
 
 // tokenValidityMargin is how much life a saved access token needs left
@@ -251,6 +271,14 @@ func RefreshToken(refresh string) (TokenResponse, error) {
 	if token.RefreshToken == "" {
 		token.RefreshToken = refresh
 	}
+	// A refresh answer may leave scope out, and saving it blank would
+	// read as a grant that lost everything - a consent screen on the next
+	// launch for no reason.
+	if token.Scope == "" {
+		if saved, err := loadToken(); err == nil {
+			token.Scope = saved.Scope
+		}
+	}
 
 	saveToken(token)
 	return token, nil
@@ -391,6 +419,10 @@ func GetAccessTokenFull() (TokenResponse, error) {
 		logging.Printf("No saved token found (%v) - starting full login", err)
 	} else if saved.RefreshToken == "" {
 		logging.Printf("Saved token has no refresh token - starting full login")
+	} else if missing := saved.missingScopes(); len(missing) > 0 {
+		// Refreshing can't add scopes - it hands back the same grant - so
+		// only fresh consent covers what this build newly asks for.
+		logging.Printf("Saved token lacks %s - starting full login", strings.Join(missing, ", "))
 	} else if saved.stillValid() {
 		// The common case, and deliberately silent: it happens on every
 		// launch inside the token's lifetime, and a line saying nothing

@@ -13,6 +13,8 @@ type TrackResult struct {
 	Name   string `json:"name"`
 	URI    string `json:"uri"`
 	Artist string `json:"artist"`
+	// Search leaves this at zero; only the top and history endpoints fill it.
+	DurationMs int `json:"duration_ms"`
 }
 
 type searchResponse struct {
