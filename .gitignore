@@ -8,3 +8,4 @@ spotmini.log
 
 /frontend/wailsjs
 .DS_Store
+.claude/
