@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math/rand/v2"
 	"os"
 	"sync"
 	"time"
@@ -54,8 +55,12 @@ type playLog struct {
 type Service struct {
 	mu      sync.Mutex
 	log     playLog
+	fav     favState
 	current *listen
+	// nil while favorites mode is off.
+	mode *mode
 
+	rng     *rand.Rand
 	pathFor func(name string) (string, error)
 }
 
@@ -65,7 +70,10 @@ func Open() *Service {
 }
 
 func open(pathFor func(string) (string, error), now time.Time) *Service {
-	s := &Service{pathFor: pathFor}
+	s := &Service{
+		pathFor: pathFor,
+		rng:     rand.New(rand.NewPCG(uint64(now.UnixNano()), 0)),
+	}
 	if err := s.load(playsFile, &s.log); err != nil {
 		logging.Printf("Could not load listening history: %v", err)
 	}
@@ -74,6 +82,19 @@ func open(pathFor func(string) (string, error), now time.Time) *Service {
 	}
 	if s.log.Started.IsZero() {
 		s.log.Started = now
+	}
+
+	if err := s.load(favoritesFile, &s.fav); err != nil {
+		logging.Printf("Could not load favorites: %v", err)
+	}
+	if s.fav.Kept == nil {
+		s.fav.Kept = make(map[string]time.Time)
+	}
+	if s.fav.Dropped == nil {
+		s.fav.Dropped = make(map[string]time.Time)
+	}
+	if s.fav.Resting == nil {
+		s.fav.Resting = make(map[string]rest)
 	}
 	return s
 }

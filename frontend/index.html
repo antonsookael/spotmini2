@@ -34,6 +34,17 @@
             </svg>
             <span id="loop-one-badge" class="loop-one-badge hidden">1</span>
           </span>
+          <span id="favorites-icon" class="playback-icon active hidden" title="Favorites mode">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z"></path>
+            </svg>
+          </span>
+          <button id="drop-btn" class="hidden" title="Drop from favorites">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="4.9" y1="4.9" x2="19.1" y2="19.1"></line>
+            </svg>
+          </button>
           <button id="playlists-toggle-btn" title="Playlists">&#9835;</button>
           <button id="settings-toggle-btn" title="Customize">&#9881;</button>
           <button id="close-btn" title="Close">&#10005;</button>
@@ -58,15 +69,31 @@
           <div class="panel-head">
             <button id="favorites-back-btn" class="panel-back-btn" title="Back">&#8592;</button>
             <div class="panel-tabs">
-              <button class="panel-tab active" data-tab="stats">Stats</button>
+              <button class="panel-tab" data-tab="favorites">Favorites</button>
+              <button class="panel-tab" data-tab="stats">Stats</button>
             </div>
+            <button id="favorites-info-btn" class="info-btn" title="How favorites mode works">i</button>
             <div class="range-switch">
               <button data-range="short_term" title="Last 4 weeks">4 wk</button>
               <button data-range="medium_term" title="Last 6 months">6 mo</button>
               <button data-range="long_term" title="All time">All</button>
             </div>
           </div>
-          <div id="stats-tab" class="panel-body"></div>
+          <ul id="favorites-info" class="favorites-info hidden">
+            <li>Plays a mix of your most-played songs for the range you pick. What you've played lately counts the most.</li>
+            <li>Keep listening to a song and it stays in the mix.</li>
+            <li>Skipping means "not right now": the song sits out a day, longer if you keep skipping it, then comes back.</li>
+            <li>The &#8856; button on the bar drops a song from the mix for good. Undo it under Dropped.</li>
+            <li>Plays are counted by spotmini while it's running, plus Spotify's recent history.</li>
+          </ul>
+          <div id="favorites-tab" class="panel-body hidden">
+            <div class="favorites-controls">
+              <button id="favorites-start-btn" class="panel-link-btn">Play favorites</button>
+              <span id="favorites-status" class="stats-note"></span>
+            </div>
+            <div id="favorites-list"></div>
+          </div>
+          <div id="stats-tab" class="panel-body hidden"></div>
       </div>
 
       <div id="settings-panel" class="hidden">

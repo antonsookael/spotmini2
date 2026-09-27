@@ -9,6 +9,7 @@ import (
 
 	"spotmini-gui/internal/logging"
 	"spotmini-gui/internal/playback"
+	"spotmini-gui/internal/stats"
 )
 
 // previousRestartMs is how far into a track Previous restarts it rather
@@ -99,6 +100,7 @@ func (a *App) PlayPause() {
 }
 
 func (a *App) NextTrack() {
+	a.stats.MarkSkip()
 	a.withTrackChange("next", playback.NextTrack)
 }
 
@@ -165,7 +167,13 @@ func (a *App) GetNowPlaying() (playback.PlaybackState, error) {
 		logging.Printf("[command] now-playing read failed: %v", err)
 		return playback.PlaybackState{}, errors.New(failureMessage(err))
 	}
-	a.stats.Observe(state)
+	switch a.stats.Observe(state) {
+	case stats.ModeEnded:
+		a.announceFavoritesMode()
+	case stats.BatchFinished:
+		// Off this goroutine: the frontend is waiting on this read.
+		go a.nextFavoritesBatch()
+	}
 	return state, nil
 }
 

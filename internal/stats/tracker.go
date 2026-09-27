@@ -44,6 +44,7 @@ type listen struct {
 
 	inFavorites  bool
 	explicitSkip bool
+	dropped      bool
 }
 
 func isTrack(uri string) bool {
@@ -61,14 +62,14 @@ func infoOf(item playback.Track) TrackInfo {
 // Observe feeds in a playback read. Every successful read should come
 // through here; plays are recorded when a read shows the track has
 // changed or stopped.
-func (s *Service) Observe(state playback.PlaybackState) {
+func (s *Service) Observe(state playback.PlaybackState) Change {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.observe(state, time.Now())
+	return s.observe(state, time.Now())
 }
 
 // Caller holds mu.
-func (s *Service) observe(state playback.PlaybackState, now time.Time) {
+func (s *Service) observe(state playback.PlaybackState, now time.Time) Change {
 	uri := state.Item.URI
 	if !isTrack(uri) {
 		// Nothing on, or a podcast. Stopping isn't skipping, so whatever
@@ -77,22 +78,23 @@ func (s *Service) observe(state playback.PlaybackState, now time.Time) {
 			s.finish(now, false)
 			s.current = nil
 		}
-		return
+		return NoChange
 	}
 
 	if c := s.current; c != nil && c.uri == uri {
 		if state.ProgressMs < c.heardMs-restartJumpMs && c.heardMs >= c.info.DurationMs/2 {
 			s.finish(now.Add(-time.Duration(state.ProgressMs)*time.Millisecond), false)
 			s.start(state, now)
-			return
+			return NoChange
 		}
 		c.heardMs = max(c.heardMs, state.ProgressMs)
 		c.lastSeen = now
 		c.playing = state.IsPlaying
-		return
+		return NoChange
 	}
 
-	if s.current != nil {
+	prev := s.current
+	if prev != nil {
 		// The new track's progress is how long ago the switch happened,
 		// which pins down how much of the old one played since last read.
 		endAt := now
@@ -101,18 +103,25 @@ func (s *Service) observe(state playback.PlaybackState, now time.Time) {
 		}
 		s.finish(endAt, true)
 	}
+	change := s.modeChange(uri, prev, now)
 	s.start(state, now)
+	return change
 }
 
 // Caller holds mu.
 func (s *Service) start(state playback.PlaybackState, now time.Time) {
+	uri := state.Item.URI
 	s.current = &listen{
-		uri:       state.Item.URI,
+		uri:       uri,
 		info:      infoOf(state.Item),
 		startedAt: now.Add(-time.Duration(state.ProgressMs) * time.Millisecond),
 		heardMs:   state.ProgressMs,
 		lastSeen:  now,
 		playing:   state.IsPlaying,
+	}
+	if s.mode != nil && s.mode.inBatch[uri] {
+		s.current.inFavorites = true
+		s.mode.seen[uri] = true
 	}
 }
 
@@ -148,6 +157,18 @@ func (s *Service) finish(endAt time.Time, movedOn bool) {
 	c := s.current
 	listened := c.listenedMs(endAt)
 	skipped := c.skipped(listened, movedOn)
+
+	// Keeping a song is just listening to it; skipping it only means not
+	// right now.
+	if c.inFavorites && !c.dropped {
+		if skipped {
+			s.rest(c.uri, endAt)
+			s.saveFav()
+		} else if listened >= minPlayMs {
+			s.fav.Kept[c.uri] = endAt
+			s.saveFav()
+		}
+	}
 
 	// A skip under the play threshold is still worth keeping from
 	// favorites mode - it's what rests the song and nudges it down.

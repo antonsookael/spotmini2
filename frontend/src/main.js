@@ -9,6 +9,12 @@ import {
   ToggleFavoritesPanel,
   GetLocalStats,
   GetSpotifyTop,
+  GetFavorites,
+  GetFavoritesMode,
+  StartFavorites,
+  StopFavorites,
+  DropCurrentFavorite,
+  UndropFavorite,
   GetPlaylists,
   PlayPlaylist,
   PlayLikedSongs,
@@ -35,6 +41,8 @@ const statusDotEl = document.getElementById('status-dot')
 const shuffleIconEl = document.getElementById('shuffle-icon')
 const loopIconEl = document.getElementById('loop-icon')
 const loopOneBadgeEl = document.getElementById('loop-one-badge')
+const favoritesIconEl = document.getElementById('favorites-icon')
+const dropBtn = document.getElementById('drop-btn')
 
 let currentSeconds = 0
 let totalSeconds = 0
@@ -44,6 +52,8 @@ let currentSpotifyURI = ''
 let isCurrentlyPlaying = false
 let isShuffled = false
 let repeatState = 'off'
+// Owned by Go; mirrored from the favorites-mode-changed event.
+let favoritesMode = { active: false, range: '' }
 // Timestamp a notice holds the track-info slot until; read by render(),
 // set by showBarMessage() further down.
 let barMessageUntil = 0
@@ -143,8 +153,13 @@ function render() {
     statusDotEl.classList.add('hidden')
     shuffleIconEl.classList.add('hidden')
     loopIconEl.classList.add('hidden')
+    favoritesIconEl.classList.add('hidden')
+    dropBtn.classList.add('hidden')
     return
   }
+
+  favoritesIconEl.classList.toggle('hidden', !favoritesMode.active)
+  dropBtn.classList.toggle('hidden', !favoritesMode.active)
 
   statusDotEl.classList.remove('hidden')
   statusDotEl.classList.toggle('playing', isCurrentlyPlaying)
@@ -543,7 +558,8 @@ EventsOn('panel-changed', (panel) => {
     openPlaylistsPanel()
   }
   if (panel === 'favorites') {
-    renderStats()
+    showFavoritesTab()
+    renderFavoritesPanel()
   }
   updatePanelHeight()
 })
@@ -627,6 +643,12 @@ function renderResults(playlists, tracks) {
       item.className = 'playlist-item'
       item.textContent = playlist.name
       item.addEventListener('click', () => {
+        if (playlist.favorites) {
+          // Switches panels rather than playing: the mode has its own
+          // range and controls to pick from first.
+          openFavoritesPanel('favorites', 'playlists')
+          return
+        }
         if (playlist.liked) {
           PlayLikedSongs()
         } else {
@@ -751,9 +773,9 @@ async function openPlaylistsPanel() {
       return
     }
 
-    // Liked Songs isn't a real playlist, so it's pinned on manually -
-    // still searchable like the rest.
-    allPlaylists = [{ name: 'Liked Songs', liked: true }, ...(playlists || [])]
+    // Liked Songs and Favorites aren't real playlists, so they're pinned
+    // on manually - still searchable like the rest.
+    allPlaylists = [{ name: 'Liked Songs', liked: true }, { name: 'Favorites', favorites: true }, ...(playlists || [])]
   }
   filterPlaylists()
 }
@@ -843,6 +865,8 @@ nowPlayingEl.addEventListener('mousedown', async (e) => {
     e.target.closest('#settings-toggle-btn') ||
     e.target.closest('#playlists-toggle-btn') ||
     e.target.closest('#close-btn') ||
+    e.target.closest('#drop-btn') ||
+    e.target.closest('#favorites-icon') ||
     e.target.closest('#track-info.clickable')
   ) return
 
@@ -1195,7 +1219,7 @@ for (const btn of rangeButtons) {
     statsRange = btn.dataset.range
     localStorage.setItem('statsRange', statsRange)
     showRange()
-    renderStats()
+    renderFavoritesPanel()
   })
 }
 
@@ -1313,11 +1337,6 @@ async function renderStats() {
   statsTabEl.scrollTop = 0
 }
 
-document.getElementById('stats-open-btn').addEventListener('click', () => {
-  favoritesOrigin = 'settings'
-  ToggleFavoritesPanel()
-})
-
 document.getElementById('favorites-back-btn').addEventListener('click', () => {
   if (favoritesOrigin === 'playlists') {
     TogglePlaylistsPanel()
@@ -1325,6 +1344,167 @@ document.getElementById('favorites-back-btn').addEventListener('click', () => {
     ToggleSettingsPanel()
   }
 })
+
+const favoritesTabEl = document.getElementById('favorites-tab')
+const favoritesListEl = document.getElementById('favorites-list')
+const favoritesStartBtn = document.getElementById('favorites-start-btn')
+const favoritesStatusEl = document.getElementById('favorites-status')
+const tabButtons = document.querySelectorAll('#favorites-panel .panel-tab')
+
+const RANGE_LABELS = { short_term: '4 weeks', medium_term: '6 months', long_term: 'all time' }
+
+let favoritesTab = localStorage.getItem('favoritesTab') || 'favorites'
+
+// The tab is set before the panel opens, so the panel-changed handler
+// renders the right one straight away.
+function openFavoritesPanel(tab, origin) {
+  favoritesTab = tab
+  favoritesOrigin = origin
+  ToggleFavoritesPanel()
+}
+
+function showFavoritesTab() {
+  for (const btn of tabButtons) {
+    btn.classList.toggle('active', btn.dataset.tab === favoritesTab)
+  }
+  favoritesTabEl.classList.toggle('hidden', favoritesTab !== 'favorites')
+  statsTabEl.classList.toggle('hidden', favoritesTab !== 'stats')
+}
+
+function renderFavoritesPanel() {
+  if (favoritesTab === 'stats') {
+    renderStats()
+  } else {
+    renderFavorites()
+  }
+}
+
+for (const btn of tabButtons) {
+  btn.addEventListener('click', () => {
+    if (btn.dataset.tab === favoritesTab) return
+    favoritesTab = btn.dataset.tab
+    localStorage.setItem('favoritesTab', favoritesTab)
+    showFavoritesTab()
+    renderFavoritesPanel()
+  })
+}
+
+document.getElementById('favorites-info-btn').addEventListener('click', (e) => {
+  const hidden = document.getElementById('favorites-info').classList.toggle('hidden')
+  e.currentTarget.classList.toggle('active', !hidden)
+})
+
+document.getElementById('stats-open-btn').addEventListener('click', () => {
+  openFavoritesPanel('stats', 'settings')
+})
+
+function formatRest(until) {
+  const hours = Math.max(1, Math.round((new Date(until) - Date.now()) / 3_600_000))
+  return hours < 24 ? `resting ${hours}h` : `resting ${Math.round(hours / 24)}d`
+}
+
+function renderFavoritesControls() {
+  favoritesStartBtn.textContent = favoritesMode.active ? 'Stop favorites' : 'Play favorites'
+  favoritesStatusEl.textContent = favoritesMode.active ? `Playing favorites · ${RANGE_LABELS[favoritesMode.range]}` : ''
+}
+
+async function renderFavorites() {
+  const seq = ++statsSeq
+  const range = statsRange
+  renderFavoritesControls()
+  favoritesListEl.replaceChildren(makeEl('div', 'playlist-empty', 'Loading...'))
+
+  let view
+  try {
+    view = await GetFavorites(range)
+  } catch (err) {
+    if (seq !== statsSeq) return
+    favoritesListEl.replaceChildren(makeEl('div', 'playlist-empty', String((err && err.message) || err)))
+    return
+  }
+  if (seq !== statsSeq) return
+
+  const out = []
+  const pool = view.pool || []
+  out.push(makeEl('div', 'results-divider', `In the mix · ${pool.length}`))
+  if (pool.length === 0) {
+    out.push(makeEl('div', 'playlist-empty', 'Nothing yet for this range'))
+  }
+  for (const t of pool) {
+    const detail = []
+    if (t.resting_until) detail.push(formatRest(t.resting_until))
+    else if (t.kept) detail.push('kept')
+    detail.push(t.score.toFixed(1))
+    const row = statTrackRow(t, detail.join(' · '))
+    row.classList.toggle('resting', !!t.resting_until)
+    out.push(row)
+  }
+
+  const dropped = view.dropped || []
+  if (dropped.length > 0) {
+    out.push(makeEl('div', 'results-divider', 'Dropped'))
+    for (const t of dropped) {
+      const row = makeEl('div', 'artist-row')
+      const info = makeEl('div', 'track-item-info')
+      info.appendChild(makeEl('div', 'track-item-name', t.name || t.uri))
+      info.appendChild(makeEl('div', 'track-item-artist', t.artist))
+      const undo = makeEl('button', 'panel-link-btn', 'Undo')
+      undo.addEventListener('click', () => {
+        undo.disabled = true
+        UndropFavorite(t.uri).then(renderFavorites)
+      })
+      row.appendChild(info)
+      row.appendChild(undo)
+      out.push(row)
+    }
+  }
+
+  favoritesListEl.replaceChildren(...out)
+}
+
+favoritesStartBtn.addEventListener('click', () => {
+  if (favoritesMode.active) {
+    StopFavorites()
+    return
+  }
+  favoritesStartBtn.disabled = true
+  StartFavorites(statsRange)
+    .catch((err) => showToast(String((err && err.message) || err), 2500))
+    .finally(() => {
+      favoritesStartBtn.disabled = false
+    })
+})
+
+dropBtn.addEventListener('click', () => {
+  dropBtn.disabled = true
+  DropCurrentFavorite()
+    .then((name) => {
+      showToast(`Dropped ${name}`, 2000)
+      if (!document.getElementById('favorites-panel').classList.contains('hidden') && favoritesTab === 'favorites') {
+        renderFavorites()
+      }
+    })
+    .catch((err) => showToast(String((err && err.message) || err), 2500))
+    .finally(() => {
+      dropBtn.disabled = false
+    })
+})
+
+// The heart is a shortcut to the mode's own panel.
+favoritesIconEl.addEventListener('click', () => {
+  if (!document.getElementById('favorites-panel').classList.contains('hidden')) return
+  openFavoritesPanel('favorites', 'playlists')
+})
+
+function applyFavoritesMode(status) {
+  favoritesMode = status || { active: false, range: '' }
+  render()
+  updateAutoWidth()
+  renderFavoritesControls()
+}
+
+EventsOn('favorites-mode-changed', applyFavoritesMode)
+GetFavoritesMode().then(applyFavoritesMode)
 
 // Stamped in at build time (see internal/app/version.go); reads "dev"
 // for local builds.
