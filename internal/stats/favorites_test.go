@@ -118,12 +118,13 @@ func TestSkippingRestsASongLongerEachTime(t *testing.T) {
 	for range 6 {
 		favoritesPlaying(t, s, "spotify:track:a", at)
 		skipAt := at.Add(20 * time.Second)
+		s.MarkSkip()
 		s.observe(state("spotify:track:other", 0, true), skipAt)
 		rests = append(rests, s.fav.Resting["spotify:track:a"].Until.Sub(skipAt))
 		at = at.Add(time.Hour)
 	}
 
-	want := []time.Duration{day, 2 * day, 4 * day, 8 * day, maxRest, maxRest}
+	want := []time.Duration{12 * time.Hour, day, 2 * day, 4 * day, 8 * day, maxRest}
 	if !slices.Equal(rests, want) {
 		t.Errorf("rests = %v, want %v", rests, want)
 	}
@@ -139,8 +140,8 @@ func TestOldSkipsAreForgotten(t *testing.T) {
 	s := newTestService(t)
 	s.rest("spotify:track:a", t0)
 	s.rest("spotify:track:a", t0.Add(30*day))
-	if got := s.fav.Resting["spotify:track:a"].Until.Sub(t0.Add(30 * day)); got != day {
-		t.Errorf("a skip a month after the last rested it %v, want a fresh %v", got, day)
+	if got := s.fav.Resting["spotify:track:a"].Until.Sub(t0.Add(30 * day)); got != baseRest {
+		t.Errorf("a skip a month after the last rested it %v, want a fresh %v", got, baseRest)
 	}
 }
 
@@ -259,10 +260,77 @@ func TestStoppingTheModeStopsCountingSkips(t *testing.T) {
 func TestFavoritesSurviveReopening(t *testing.T) {
 	s := newTestService(t)
 	favoritesPlaying(t, s, "spotify:track:a", t0)
+	s.MarkSkip()
 	s.observe(state("spotify:track:b", 0, true), t0.Add(20*time.Second))
 
 	reopened := open(s.pathFor, t0)
 	if _, resting := reopened.fav.Resting["spotify:track:a"]; !resting {
 		t.Error("a rest didn't survive reopening")
+	}
+}
+
+// twoSongBatch starts favorites mode on a batch of a then b, with a
+// playing.
+func twoSongBatch(t *testing.T, s *Service) {
+	t.Helper()
+	s.fav.Kept["spotify:track:a"] = t0
+	s.fav.Kept["spotify:track:b"] = t0
+	if _, err := s.startFavorites(playback.RangeShort, nil, t0); err != nil {
+		t.Fatal(err)
+	}
+	s.mode.batch = []string{"spotify:track:a", "spotify:track:b"}
+	s.observe(state("spotify:track:a", 0, true), t0)
+}
+
+func TestSkippingInSpotifyToTheNextFavoriteCounts(t *testing.T) {
+	s := newTestService(t)
+	twoSongBatch(t, s)
+	s.observe(state("spotify:track:b", 0, true), t0.Add(20*time.Second))
+
+	if _, resting := s.fav.Resting["spotify:track:a"]; !resting {
+		t.Error("moving on to the next favorite early didn't rest the song")
+	}
+}
+
+func TestPuttingOnSomethingElseIsNotASkip(t *testing.T) {
+	s := newTestService(t)
+	twoSongBatch(t, s)
+	at := play(s, "spotify:track:a", t0, 10, 40)
+	s.observe(state("spotify:track:playlist", 0, true), at.Add(time.Second))
+
+	if _, resting := s.fav.Resting["spotify:track:a"]; resting {
+		t.Error("switching to a playlist rested the song")
+	}
+	for _, p := range s.log.Plays {
+		if p.Skipped {
+			t.Errorf("switching away logged %+v as a skip, which would count against the song", p)
+		}
+	}
+}
+
+func TestGoingBackIsNotASkip(t *testing.T) {
+	s := newTestService(t)
+	twoSongBatch(t, s)
+	s.observe(state("spotify:track:b", 0, true), t0.Add(3*time.Minute+30*time.Second))
+	s.MarkBack()
+	s.observe(state("spotify:track:a", 0, true), t0.Add(4*time.Minute))
+
+	if _, resting := s.fav.Resting["spotify:track:b"]; resting {
+		t.Error("pressing previous rested the song it left")
+	}
+}
+
+func TestStartingANewBatchIsNotASkip(t *testing.T) {
+	s := newTestService(t)
+	twoSongBatch(t, s)
+	// Out of the next batch, so moving from it to that batch's first
+	// song would otherwise look just like skipping it.
+	delete(s.fav.Kept, "spotify:track:a")
+	s.fav.Kept["spotify:track:c"] = t0
+	batch, _ := s.startFavorites(playback.RangeShort, nil, t0.Add(10*time.Second))
+	s.observe(state(batch[0], 0, true), t0.Add(20*time.Second))
+
+	if _, resting := s.fav.Resting["spotify:track:a"]; resting {
+		t.Error("starting favorites again rested the song it replaced")
 	}
 }

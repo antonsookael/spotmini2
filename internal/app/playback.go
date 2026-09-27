@@ -119,6 +119,7 @@ func (a *App) PreviousTrack() {
 		})
 		return
 	}
+	a.stats.MarkBack()
 	a.withTrackChange("previous", playback.PreviousTrack)
 }
 

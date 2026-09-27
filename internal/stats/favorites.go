@@ -23,7 +23,7 @@ const (
 
 	// A skipped song rests for baseRest, doubling with each further skip
 	// inside skipMemory, up to maxRest.
-	baseRest   = day
+	baseRest   = 12 * time.Hour
 	maxRest    = 14 * day
 	skipMemory = 14 * day
 
@@ -178,11 +178,20 @@ func (s *Service) beginBatch(batch []string, now time.Time) {
 	s.mode.seen = make(map[string]bool)
 	s.mode.startedAt = now
 
+	c := s.current
+	if c == nil {
+		return
+	}
 	// Already playing one of them - the play request restarts it, and
 	// the read that sees that is the same track, so it'd never be marked.
-	if c := s.current; c != nil && s.mode.inBatch[c.uri] {
+	if s.mode.inBatch[c.uri] {
 		c.inFavorites = true
 		s.mode.seen[c.uri] = true
+	}
+	// Anything else is about to be replaced by the batch's first song,
+	// which is the batch starting rather than the song being skipped.
+	if c.uri != batch[0] {
+		c.notASkip = true
 	}
 }
 
@@ -284,6 +293,16 @@ func (s *Service) MarkSkip() {
 	}
 }
 
+// MarkBack records that the user pressed Previous: moving back to the
+// song before isn't passing on this one.
+func (s *Service) MarkBack() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if c := s.current; c != nil {
+		c.notASkip = true
+	}
+}
+
 // DropCurrent takes the song favorites mode is playing out of the mode
 // for good. The caller moves playback on.
 func (s *Service) DropCurrent() (TrackInfo, error) {
@@ -318,15 +337,17 @@ func (s *Service) Undrop(uri string) {
 	s.saveFav()
 }
 
-// rest sends a skipped song away for a while: a day for the first skip,
-// doubling for each further one within skipMemory.
+// rest sends a skipped song away for a while: baseRest for the first
+// skip, doubling for each further one within skipMemory.
 //
 // Caller holds mu.
 func (s *Service) rest(uri string, at time.Time) {
 	r := s.fav.Resting[uri]
 	r.Skips = slices.DeleteFunc(r.Skips, func(t time.Time) bool { return at.Sub(t) > skipMemory })
 	r.Skips = append(r.Skips, at)
-	d := baseRest << min(len(r.Skips)-1, 4)
+	// Capped as a shift count too, so a song skipped dozens of times
+	// can't shift the duration into overflow.
+	d := baseRest << min(len(r.Skips)-1, 8)
 	r.Until = at.Add(min(d, maxRest))
 	s.fav.Resting[uri] = r
 }

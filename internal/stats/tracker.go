@@ -45,6 +45,9 @@ type listen struct {
 	inFavorites  bool
 	explicitSkip bool
 	dropped      bool
+	// Left for a reason other than skipping it: Previous, or a new batch
+	// replacing it.
+	notASkip bool
 }
 
 func isTrack(uri string) bool {
@@ -75,7 +78,7 @@ func (s *Service) observe(state playback.PlaybackState, now time.Time) Change {
 		// Nothing on, or a podcast. Stopping isn't skipping, so whatever
 		// was on ends as heard.
 		if s.current != nil {
-			s.finish(now, false)
+			s.finish(now, false, false)
 			s.current = nil
 		}
 		return NoChange
@@ -83,7 +86,7 @@ func (s *Service) observe(state playback.PlaybackState, now time.Time) Change {
 
 	if c := s.current; c != nil && c.uri == uri {
 		if state.ProgressMs < c.heardMs-restartJumpMs && c.heardMs >= c.info.DurationMs/2 {
-			s.finish(now.Add(-time.Duration(state.ProgressMs)*time.Millisecond), false)
+			s.finish(now.Add(-time.Duration(state.ProgressMs)*time.Millisecond), false, false)
 			s.start(state, now)
 			return NoChange
 		}
@@ -101,7 +104,7 @@ func (s *Service) observe(state playback.PlaybackState, now time.Time) Change {
 		if state.IsPlaying {
 			endAt = now.Add(-time.Duration(state.ProgressMs) * time.Millisecond)
 		}
-		s.finish(endAt, true)
+		s.finish(endAt, true, s.mode != nil && s.mode.inBatch[uri])
 	}
 	change := s.modeChange(uri, prev, now)
 	s.start(state, now)
@@ -150,13 +153,21 @@ func (l *listen) skipped(listenedMs int, movedOn bool) bool {
 }
 
 // finish records the current listen as having ended at endAt. movedOn
-// says another track took over, as opposed to playback stopping.
+// says another track took over, as opposed to playback stopping, and
+// intoBatch that the track was the favorites batch's next song.
 //
 // Caller holds mu.
-func (s *Service) finish(endAt time.Time, movedOn bool) {
+func (s *Service) finish(endAt time.Time, movedOn, intoBatch bool) {
 	c := s.current
 	listened := c.listenedMs(endAt)
 	skipped := c.skipped(listened, movedOn)
+
+	// In favorites mode only a skip meant as one counts: Next, or moving
+	// on to the batch's next song. Putting on something else entirely,
+	// starting a new batch or going back isn't a verdict on the song.
+	if c.inFavorites {
+		skipped = skipped && !c.notASkip && (c.explicitSkip || intoBatch)
+	}
 
 	// Keeping a song is just listening to it; skipping it only means not
 	// right now.

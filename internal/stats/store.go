@@ -33,7 +33,8 @@ type Play struct {
 	// it's Spotify's played_at, which is within a track's length of that.
 	At         time.Time `json:"at"`
 	ListenedMs int       `json:"listened_ms"`
-	Skipped    bool      `json:"skipped,omitempty"`
+	// Left before halfway - or, in favorites mode, skipped on purpose.
+	Skipped bool `json:"skipped,omitempty"`
 	// Played by favorites mode, the only place a skip counts against a
 	// song - skipping through someone else's playlist says nothing about
 	// how much you like what's in it.

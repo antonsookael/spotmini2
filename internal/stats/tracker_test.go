@@ -84,6 +84,7 @@ func TestAFavoritesSkipIsKeptEvenWhenShort(t *testing.T) {
 	s := newTestService(t)
 	at := play(s, "spotify:track:a", t0, 0, 10)
 	s.current.inFavorites = true
+	s.current.explicitSkip = true
 	s.observe(state("spotify:track:b", 0, true), at.Add(5*time.Second))
 
 	if len(s.log.Plays) != 1 || !s.log.Plays[0].Skipped || !s.log.Plays[0].InFavorites {
