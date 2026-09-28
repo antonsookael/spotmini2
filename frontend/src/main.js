@@ -202,6 +202,7 @@ function applyPlaybackState(state) {
     currentSpotifyURI = ''
     render()
     updateAutoWidth()
+    markPlayingFavorite()
     return
   }
   currentSong = state.item.name
@@ -220,6 +221,7 @@ function applyPlaybackState(state) {
   repeatState = state.repeat_state || 'off'
   render()
   updateAutoWidth()
+  markPlayingFavorite()
 }
 
 // True when the last read failed. Two things depend on knowing the
@@ -1546,14 +1548,13 @@ async function renderFavorites() {
     out.push(makeEl('div', 'playlist-empty', 'Nothing yet for this stretch of listening'))
   }
   for (const t of pool) {
-    const playing = favoritesMode.active && t.uri === currentSpotifyURI
     const detail = []
-    if (playing) detail.push('playing')
     if (t.resting_until) detail.push(formatRest(t.resting_until))
-    else if (t.kept && !playing) detail.push('kept')
+    else if (t.kept) detail.push('kept')
     detail.push(t.score.toFixed(1))
     const row = statTrackRow(t, detail.join(' · '))
-    row.classList.toggle('playing', playing)
+    row.dataset.uri = t.uri
+    row.querySelector('.stat-detail').before(makeEl('span', 'fav-playing-tag', 'playing'))
     if (t.resting_until) {
       row.classList.add('resting')
       const wake = makeEl('button', 'panel-link-btn row-btn', 'Wake')
@@ -1589,6 +1590,17 @@ async function renderFavorites() {
   }
 
   favoritesListEl.replaceChildren(...out)
+  markPlayingFavorite()
+}
+
+// Kept in step with the bar rather than decided when the list is drawn:
+// the list is usually drawn the moment the mode starts, before Spotify
+// has reported moving on to the mix's first song.
+function markPlayingFavorite() {
+  const uri = favoritesMode.active ? currentSpotifyURI : ''
+  for (const row of favoritesListEl.querySelectorAll('.track-item[data-uri]')) {
+    row.classList.toggle('playing', row.dataset.uri === uri)
+  }
 }
 
 dropBtn.addEventListener('click', () => {
@@ -1632,6 +1644,7 @@ function applyFavoritesMode(status, ended) {
   render()
   updateAutoWidth()
   renderFavoritesModeBtn()
+  markPlayingFavorite()
 }
 
 EventsOn('favorites-mode-changed', applyFavoritesMode)

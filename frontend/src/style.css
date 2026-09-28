@@ -716,7 +716,18 @@ body.favorites-app #playlists-toggle-btn {
   background: color-mix(in srgb, var(--accent-color) 10%, transparent);
 }
 
-.track-item.playing .stat-detail {
+.fav-playing-tag {
+  display: none;
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--accent-color);
+}
+
+.track-item.playing .fav-playing-tag {
+  display: inline;
+}
+
+.track-item.playing .track-item-name {
   color: var(--accent-color);
 }
 
