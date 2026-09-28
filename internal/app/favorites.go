@@ -95,6 +95,21 @@ func (a *App) nextFavoritesBatch() {
 	a.playFavoritesBatch("favoritesNext", batch)
 }
 
+// PlayFavorite plays a song picked from the favorites list, as the start
+// of a fresh mix rather than on its own, so the mode carries on.
+func (a *App) PlayFavorite(uri string) error {
+	mode := a.stats.Mode()
+	if !mode.Active {
+		return errors.New("Favorites mode isn't on")
+	}
+	top, err := a.spotifyTop(mode.Range)
+	if err != nil {
+		logging.Printf("Favorites: could not read top tracks for a picked song: %v", err)
+	}
+	a.playFavoritesBatch("favoritesPick", a.stats.StartFavoritesWith(uri, mode.Range, top.Tracks))
+	return nil
+}
+
 // StopFavorites leaves favorites mode. Whatever is playing carries on.
 func (a *App) StopFavorites() {
 	a.stats.StopFavorites()

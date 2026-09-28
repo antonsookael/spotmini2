@@ -18,6 +18,7 @@ import {
   DropCurrentFavorite,
   UndropFavorite,
   WakeFavorite,
+  PlayFavorite,
   GetResumeFavorites,
   SetResumeFavorites,
   GetPlaylists,
@@ -1286,8 +1287,9 @@ function makeEl(tag, className, text) {
 }
 
 // A song row that plays the song when clicked, with detail (a play
-// count, a rank) on the right.
-function statTrackRow(track, detail) {
+// count, a rank) on the right. play does the playing, for lists where a
+// song on its own isn't what's wanted.
+function statTrackRow(track, detail, play = (t) => PlayTrack(t.uri)) {
   const row = makeEl('div', 'track-item')
   const info = makeEl('div', 'track-item-info')
   info.appendChild(makeEl('div', 'track-item-name', track.name))
@@ -1295,7 +1297,7 @@ function statTrackRow(track, detail) {
   row.appendChild(info)
   row.appendChild(makeEl('span', 'stat-detail', detail))
   row.addEventListener('click', () => {
-    PlayTrack(track.uri)
+    play(track)
     showPendingTrack(track)
   })
   return row
@@ -1552,7 +1554,7 @@ async function renderFavorites() {
     if (t.resting_until) detail.push(formatRest(t.resting_until))
     else if (t.kept) detail.push('kept')
     detail.push(t.score.toFixed(1))
-    const row = statTrackRow(t, detail.join(' · '))
+    const row = statTrackRow(t, detail.join(' · '), playFavorite)
     row.dataset.uri = t.uri
     row.querySelector('.stat-detail').before(makeEl('span', 'fav-playing-tag', 'playing'))
     if (t.resting_until) {
@@ -1591,6 +1593,12 @@ async function renderFavorites() {
 
   favoritesListEl.replaceChildren(...out)
   markPlayingFavorite()
+}
+
+// Played as the start of a fresh mix: on its own, it'd be something other
+// than the mix playing, which ends the mode.
+function playFavorite(track) {
+  PlayFavorite(track.uri).catch((err) => showToast(String((err && err.message) || err), 2500))
 }
 
 // Kept in step with the bar rather than decided when the list is drawn:

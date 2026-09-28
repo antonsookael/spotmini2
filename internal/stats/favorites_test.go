@@ -403,3 +403,28 @@ func TestAResumedModeEndsIfSomethingElseIsPlaying(t *testing.T) {
 		t.Error("the ended mode is still saved to resume")
 	}
 }
+
+func TestPickingASongFromTheMixKeepsTheModeGoing(t *testing.T) {
+	s := newTestService(t)
+	uris := []string{"spotify:track:a", "spotify:track:b", "spotify:track:c"}
+	twoSongBatch(t, s)
+	at := play(s, "spotify:track:a", t0, 10, 40)
+
+	batch := s.startFavoritesWith("spotify:track:c", playback.RangeShort, ranking(uris...), at)
+	if batch[0] != "spotify:track:c" {
+		t.Fatalf("batch = %v, want the picked song first", batch)
+	}
+	if slices.Index(batch[1:], "spotify:track:c") >= 0 {
+		t.Errorf("batch = %v, the picked song is in it twice", batch)
+	}
+
+	if got := s.observe(state("spotify:track:c", 0, true), at.Add(time.Second)); got != NoChange {
+		t.Errorf("got %v when the picked song started, want NoChange", got)
+	}
+	if !s.modeStatus().Active || !s.current.inFavorites {
+		t.Error("picking a song from the mix took it out of favorites mode")
+	}
+	if _, resting := s.fav.Resting["spotify:track:a"]; resting {
+		t.Error("picking another song rested the one that was playing")
+	}
+}

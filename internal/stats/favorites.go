@@ -234,6 +234,27 @@ func (s *Service) startFavorites(timeRange string, ranking []playback.TrackResul
 	return s.mode.batch, nil
 }
 
+// StartFavoritesWith starts a fresh batch that opens with uri, for
+// picking a song out of the mix: played on its own, it'd be something
+// other than the mix playing, which ends the mode.
+func (s *Service) StartFavoritesWith(uri, timeRange string, ranking []playback.TrackResult) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.startFavoritesWith(uri, timeRange, ranking, time.Now())
+}
+
+// Caller holds mu.
+func (s *Service) startFavoritesWith(uri, timeRange string, ranking []playback.TrackResult, now time.Time) []string {
+	pool, scores := s.pool(timeRange, ranking, now)
+	pool = slices.DeleteFunc(pool, func(u string) bool { return u == uri })
+	rest := s.pickBatch(pool, scores, now)
+	batch := append([]string{uri}, rest[:min(len(rest), batchSize-1)]...)
+
+	s.mode = &mode{timeRange: timeRange}
+	s.beginBatch(batch, now)
+	return batch
+}
+
 // NextBatch draws a fresh batch for the running mode. False if the mode
 // has been switched off in the meantime. ranking is Spotify's top tracks
 // for the mode's range, as for StartFavorites.
