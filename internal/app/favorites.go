@@ -11,8 +11,15 @@ import (
 	"spotmini-gui/internal/stats"
 )
 
-func (a *App) announceFavoritesMode() {
-	runtime.EventsEmit(a.ctx, "favorites-mode-changed", a.stats.Mode())
+// Why favorites mode ended, when it ended by itself, so the bar can say.
+const (
+	endedNone      = ""
+	endedSwitched  = "switched"   // something else started playing
+	endedCantStart = "cant-start" // the mix couldn't be started or refilled
+)
+
+func (a *App) announceFavoritesMode(ended string) {
+	runtime.EventsEmit(a.ctx, "favorites-mode-changed", a.stats.Mode(), ended)
 }
 
 // StartFavorites plays a batch of the user's favorites for timeRange and
@@ -58,19 +65,31 @@ func (a *App) playFavoritesBatch(name string, batch []string) {
 		}
 		return playback.PlayURIs(token, batch)
 	})
+	ended := endedNone
 	if err != nil {
 		logging.Printf("Favorites: could not start a batch: %v", err)
 		a.stats.StopFavorites()
+		ended = endedCantStart
 	}
-	a.announceFavoritesMode()
+	a.announceFavoritesMode(ended)
 }
 
 // nextFavoritesBatch keeps favorites mode going once a batch has played
 // through, rather than leaving Spotify to autoplay something else.
 func (a *App) nextFavoritesBatch() {
-	batch, ok := a.stats.NextBatch()
+	mode := a.stats.Mode()
+	if !mode.Active {
+		return
+	}
+	// Without the ranking the batch still draws on the songs played and
+	// kept here, which beats leaving Spotify to autoplay.
+	top, err := a.spotifyTop(mode.Range)
+	if err != nil {
+		logging.Printf("Favorites: could not read top tracks for the next batch: %v", err)
+	}
+	batch, ok := a.stats.NextBatch(top.Tracks)
 	if !ok {
-		a.announceFavoritesMode()
+		a.announceFavoritesMode(endedCantStart)
 		return
 	}
 	a.playFavoritesBatch("favoritesNext", batch)
@@ -79,7 +98,7 @@ func (a *App) nextFavoritesBatch() {
 // StopFavorites leaves favorites mode. Whatever is playing carries on.
 func (a *App) StopFavorites() {
 	a.stats.StopFavorites()
-	a.announceFavoritesMode()
+	a.announceFavoritesMode(endedNone)
 }
 
 func (a *App) GetFavoritesMode() stats.ModeStatus {
@@ -113,6 +132,16 @@ func (a *App) DropCurrentFavorite() (string, error) {
 
 func (a *App) UndropFavorite(uri string) {
 	a.stats.Undrop(uri)
+}
+
+// GetResumeFavorites reports whether a favorites mode still running at
+// quit picks up again on the next launch.
+func (a *App) GetResumeFavorites() bool {
+	return a.stats.ResumeOnLaunch()
+}
+
+func (a *App) SetResumeFavorites(on bool) {
+	a.stats.SetResumeOnLaunch(on)
 }
 
 // WakeFavorite ends a skipped song's rest early.

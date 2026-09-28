@@ -18,6 +18,8 @@ import {
   DropCurrentFavorite,
   UndropFavorite,
   WakeFavorite,
+  GetResumeFavorites,
+  SetResumeFavorites,
   GetPlaylists,
   PlayPlaylist,
   PlayLikedSongs,
@@ -44,7 +46,7 @@ const statusDotEl = document.getElementById('status-dot')
 const shuffleIconEl = document.getElementById('shuffle-icon')
 const loopIconEl = document.getElementById('loop-icon')
 const loopOneBadgeEl = document.getElementById('loop-one-badge')
-const favoritesIconEl = document.getElementById('favorites-icon')
+const favoritesBadgeEl = document.getElementById('favorites-badge')
 const dropBtn = document.getElementById('drop-btn')
 
 let currentSeconds = 0
@@ -156,13 +158,14 @@ function render() {
     statusDotEl.classList.add('hidden')
     shuffleIconEl.classList.add('hidden')
     loopIconEl.classList.add('hidden')
-    favoritesIconEl.classList.add('hidden')
     dropBtn.classList.add('hidden')
     return
   }
 
-  favoritesIconEl.classList.toggle('hidden', !favoritesMode.active)
   dropBtn.classList.toggle('hidden', !favoritesMode.active)
+  // Stands in for the status dot in favorites mode, so it carries the
+  // paused state too.
+  favoritesBadgeEl.classList.toggle('paused', !isCurrentlyPlaying)
 
   statusDotEl.classList.remove('hidden')
   statusDotEl.classList.toggle('playing', isCurrentlyPlaying)
@@ -560,13 +563,18 @@ EventsOn('panel-changed', (panel) => {
   document.getElementById('stats-panel').classList.toggle('hidden', panel !== 'stats')
 
   if (panel === 'settings') {
-    showSettingsPage('main')
+    showSettingsPage(pendingSettingsPage || 'main')
+    pendingSettingsPage = null
+  }
+  // Back to the favorites app, or closed: either way the next page isn't
+  // one opened from its menu.
+  if (panel === '' || panel === 'favorites') {
+    returnToFavorites = false
   }
   if (panel === 'playlists') {
     openPlaylistsPanel()
   }
   if (panel === 'favorites') {
-    noteFavoritesOrigin()
     renderFavorites()
   }
   if (panel === 'stats') {
@@ -655,9 +663,7 @@ function renderResults(playlists, tracks) {
       item.textContent = playlist.name
       item.addEventListener('click', () => {
         if (playlist.favorites) {
-          // Switches panels rather than playing: the mode has its own
-          // range and controls to pick from first.
-          openFavoritesPanel('playlists')
+          startFavoritesMode()
           return
         }
         if (playlist.liked) {
@@ -845,6 +851,16 @@ autostartToggle.addEventListener('change', async (e) => {
   }
 })
 
+// Kept in Go beside the rest of favorites mode's state, since it's Go
+// that decides at launch whether to pick the mode back up.
+const resumeFavoritesToggle = document.getElementById('resume-favorites-toggle')
+GetResumeFavorites().then((on) => {
+  resumeFavoritesToggle.checked = on
+})
+resumeFavoritesToggle.addEventListener('change', (e) => {
+  SetResumeFavorites(e.target.checked)
+})
+
 // Flipping here rather than in Go keeps localStorage, the checkbox and
 // the window state in sync - see ToggleAlwaysOnTop.
 EventsOn('toggle-always-on-top', () => {
@@ -877,7 +893,7 @@ nowPlayingEl.addEventListener('mousedown', async (e) => {
     e.target.closest('#playlists-toggle-btn') ||
     e.target.closest('#close-btn') ||
     e.target.closest('#drop-btn') ||
-    e.target.closest('#favorites-icon') ||
+    e.target.closest('#favorites-badge') ||
     e.target.closest('#track-info.clickable')
   ) return
 
@@ -1203,13 +1219,17 @@ document.getElementById('hotkeys-open-btn').addEventListener('click', () => {
 })
 
 document.getElementById('hotkeys-back-btn').addEventListener('click', () => {
-  ShowSettingsPanel()
+  if (returnToFavorites) ToggleFavoritesPanel()
+  else ShowSettingsPanel()
 })
 
 // --- Settings pages ---
 // Theme and Advanced are pages inside the settings panel rather than
 // panels of their own: they're only ever reached from it.
 const SETTINGS_PAGES = ['main', 'theme', 'advanced']
+// The page to show the next time the settings panel opens, when it's
+// opened for one in particular - the favorites menu goes straight to one.
+let pendingSettingsPage = null
 
 function showSettingsPage(page) {
   for (const p of SETTINGS_PAGES) {
@@ -1223,12 +1243,13 @@ for (const btn of document.querySelectorAll('[data-settings-page]')) {
 }
 
 for (const btn of document.querySelectorAll('.settings-back-btn')) {
-  btn.addEventListener('click', () => showSettingsPage('main'))
+  btn.addEventListener('click', () => {
+    if (returnToFavorites) ToggleFavoritesPanel()
+    else showSettingsPage('main')
+  })
 }
 
 // --- Shared by the stats and favorites panels ---
-const RANGE_LABELS = { short_term: '4 weeks', medium_term: '6 months', long_term: 'all time' }
-
 // Wires up a 4 wk / 6 mo / All switch whose choice is remembered under
 // storageKey. Returns a getter for the current choice.
 function rangeSwitch(container, storageKey, onChange) {
@@ -1297,7 +1318,8 @@ document.getElementById('stats-open-btn').addEventListener('click', () => {
 })
 
 document.getElementById('stats-back-btn').addEventListener('click', () => {
-  ShowSettingsPanel()
+  if (returnToFavorites) ToggleFavoritesPanel()
+  else ShowSettingsPanel()
 })
 
 function dayChart(days) {
@@ -1379,78 +1401,132 @@ async function renderStats() {
   statsBodyEl.scrollTop = 0
 }
 
-// --- Favorites panel ---
+// --- Favorites mode ---
+// Its own app rather than a page: starting it switches the bar and the
+// settings hotkey over to it, and stopping it is the way back.
 const favoritesPanelEl = document.getElementById('favorites-panel')
 const favoritesListEl = document.getElementById('favorites-list')
-const favoritesStartBtn = document.getElementById('favorites-start-btn')
-const favoritesStatusEl = document.getElementById('favorites-status')
-const favoritesRange = rangeSwitch(document.querySelector('#favorites-panel .range-switch'), 'favoritesRange', () =>
-  renderFavorites()
-)
-let favoritesSeq = 0
-// Where back goes from favorites. Whatever opens the panel names where
-// it came from; an open nobody named - the settings hotkey and gear,
-// which lead here while the mode is on - counts as settings.
-let favoritesOrigin = null
-let favoritesBackTo = 'settings'
-
-function openFavoritesPanel(origin) {
-  favoritesOrigin = origin
-  ToggleFavoritesPanel()
-}
-
-function noteFavoritesOrigin() {
-  favoritesBackTo = favoritesOrigin || 'settings'
-  favoritesOrigin = null
-}
-
-document.getElementById('favorites-back-btn').addEventListener('click', () => {
-  if (favoritesBackTo === 'playlists') {
-    TogglePlaylistsPanel()
-  } else {
-    ShowSettingsPanel()
-  }
-})
-
-// Starts the mode outright rather than just opening its panel - the row
-// is named for the mode, not the list. Once it's on, it's the way back in.
+const favoritesMenuEl = document.getElementById('favorites-menu')
 const favoritesModeBtn = document.getElementById('favorites-mode-btn')
-favoritesModeBtn.addEventListener('click', () => {
+const favoriteChips = document.querySelectorAll('#favorites-panel .fav-chip')
+
+let favoritesRange = localStorage.getItem('favoritesRange') || 'short_term'
+let favoritesSeq = 0
+// Set while the user is stopping the mode, so its ending isn't reported
+// as something having gone wrong.
+let stoppingFavorites = false
+// Set when a page was opened from the favorites menu, so its back arrow
+// returns to the favorites app instead of the regular settings.
+let returnToFavorites = false
+
+const FAVORITES_ENDED_MESSAGES = {
+  switched: 'Favorites mode ended - something else is playing',
+  'cant-start': "Favorites mode ended - couldn't start the mix",
+}
+
+function showFavoritesRange() {
+  for (const chip of favoriteChips) {
+    chip.classList.toggle('on', chip.dataset.range === favoritesRange)
+  }
+}
+showFavoritesRange()
+
+function renderFavoritesModeBtn() {
+  if (!favoritesModeBtn.disabled) favoritesModeBtn.textContent = favoritesMode.active ? 'Open' : 'Start'
+}
+
+function openFavoritesApp() {
+  if (favoritesPanelEl.classList.contains('hidden')) ToggleFavoritesPanel()
+}
+
+// Both ways in - the settings row and the pinned playlists row - start
+// the mode outright: there's nothing to see in the app until it's on.
+function startFavoritesMode(button) {
   if (favoritesMode.active) {
-    openFavoritesPanel('settings')
+    openFavoritesApp()
     return
   }
-  favoritesModeBtn.disabled = true
-  favoritesModeBtn.textContent = 'Starting...'
-  StartFavorites(favoritesRange())
-    .then(() => openFavoritesPanel('settings'))
+  if (button) {
+    button.disabled = true
+    button.textContent = 'Starting...'
+  }
+  StartFavorites(favoritesRange)
+    .then(openFavoritesApp)
     .catch((err) => showToast(String((err && err.message) || err), 2500))
     .finally(() => {
-      favoritesModeBtn.disabled = false
-      renderFavoritesControls()
+      if (!button) return
+      button.disabled = false
+      renderFavoritesModeBtn()
     })
+}
+
+favoritesModeBtn.addEventListener('click', () => startFavoritesMode(favoritesModeBtn))
+
+document.getElementById('favorites-stop-btn').addEventListener('click', () => {
+  stoppingFavorites = true
+  StopFavorites()
 })
 
-document.getElementById('favorites-info-btn').addEventListener('click', (e) => {
-  const hidden = document.getElementById('favorites-info').classList.toggle('hidden')
-  e.currentTarget.classList.toggle('active', !hidden)
+for (const chip of favoriteChips) {
+  chip.addEventListener('click', () => {
+    if (chip.dataset.range === favoritesRange) return
+    favoritesRange = chip.dataset.range
+    localStorage.setItem('favoritesRange', favoritesRange)
+    showFavoritesRange()
+    if (!favoritesMode.active) {
+      renderFavorites()
+      return
+    }
+    // A different stretch of listening is a different mix, so it starts
+    // straight away rather than waiting for this batch to run out.
+    StartFavorites(favoritesRange)
+      .then(renderFavorites)
+      .catch((err) => showToast(String((err && err.message) || err), 2500))
+  })
+}
+
+function closeFavoritesMenu() {
+  favoritesMenuEl.classList.add('hidden')
+}
+
+document.getElementById('favorites-menu-btn').addEventListener('click', (e) => {
+  e.stopPropagation()
+  favoritesMenuEl.classList.toggle('hidden')
 })
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.fav-menu-wrap')) closeFavoritesMenu()
+})
+
+for (const item of favoritesMenuEl.querySelectorAll('[data-fav-menu]')) {
+  item.addEventListener('click', () => {
+    closeFavoritesMenu()
+    const target = item.dataset.favMenu
+    if (target === 'info') {
+      document.getElementById('favorites-info').classList.toggle('hidden')
+      return
+    }
+    returnToFavorites = true
+    if (target === 'theme' || target === 'advanced') {
+      pendingSettingsPage = target
+      ShowSettingsPanel()
+    } else if (target === 'hotkeys') {
+      ToggleHotkeysPanel()
+    } else if (target === 'stats') {
+      ToggleStatsPanel()
+    }
+  })
+}
 
 function formatRest(until) {
   const hours = Math.max(1, Math.round((new Date(until) - Date.now()) / 3_600_000))
   return hours < 24 ? `resting ${hours}h` : `resting ${Math.round(hours / 24)}d`
 }
 
-function renderFavoritesControls() {
-  favoritesStartBtn.textContent = favoritesMode.active ? 'Stop favorites' : 'Play favorites'
-  favoritesStatusEl.textContent = favoritesMode.active ? `Playing favorites · ${RANGE_LABELS[favoritesMode.range]}` : ''
-  if (!favoritesModeBtn.disabled) favoritesModeBtn.textContent = favoritesMode.active ? 'Open' : 'Start'
-}
-
 async function renderFavorites() {
   const seq = ++favoritesSeq
-  const range = favoritesRange()
-  renderFavoritesControls()
+  const range = favoritesRange
+  showFavoritesRange()
   favoritesListEl.replaceChildren(makeEl('div', 'playlist-empty', 'Loading...'))
 
   let view
@@ -1465,16 +1541,19 @@ async function renderFavorites() {
 
   const out = []
   const pool = view.pool || []
-  out.push(makeEl('div', 'results-divider', `In the mix · ${pool.length}`))
+  out.push(makeEl('div', 'results-divider', `In your mix · ${pool.length}`))
   if (pool.length === 0) {
-    out.push(makeEl('div', 'playlist-empty', 'Nothing yet for this range'))
+    out.push(makeEl('div', 'playlist-empty', 'Nothing yet for this stretch of listening'))
   }
   for (const t of pool) {
+    const playing = favoritesMode.active && t.uri === currentSpotifyURI
     const detail = []
+    if (playing) detail.push('playing')
     if (t.resting_until) detail.push(formatRest(t.resting_until))
-    else if (t.kept) detail.push('kept')
+    else if (t.kept && !playing) detail.push('kept')
     detail.push(t.score.toFixed(1))
     const row = statTrackRow(t, detail.join(' · '))
+    row.classList.toggle('playing', playing)
     if (t.resting_until) {
       row.classList.add('resting')
       const wake = makeEl('button', 'panel-link-btn row-btn', 'Wake')
@@ -1512,19 +1591,6 @@ async function renderFavorites() {
   favoritesListEl.replaceChildren(...out)
 }
 
-favoritesStartBtn.addEventListener('click', () => {
-  if (favoritesMode.active) {
-    StopFavorites()
-    return
-  }
-  favoritesStartBtn.disabled = true
-  StartFavorites(favoritesRange())
-    .catch((err) => showToast(String((err && err.message) || err), 2500))
-    .finally(() => {
-      favoritesStartBtn.disabled = false
-    })
-})
-
 dropBtn.addEventListener('click', () => {
   dropBtn.disabled = true
   DropCurrentFavorite()
@@ -1538,20 +1604,38 @@ dropBtn.addEventListener('click', () => {
     })
 })
 
-// The heart is a shortcut to the mode's own panel.
-favoritesIconEl.addEventListener('click', () => {
-  if (favoritesPanelEl.classList.contains('hidden')) ToggleFavoritesPanel()
+favoritesBadgeEl.addEventListener('click', () => {
+  ToggleFavoritesPanel()
 })
 
-function applyFavoritesMode(status) {
+// ended says why the mode stopped, when it stopped by itself.
+function applyFavoritesMode(status, ended) {
+  const wasActive = favoritesMode.active
   favoritesMode = status || { active: false, range: '' }
+  document.body.classList.toggle('favorites-app', favoritesMode.active)
+
+  if (favoritesMode.active && favoritesMode.range) {
+    // Resumed or restarted from Go, which is where the running range lives.
+    favoritesRange = favoritesMode.range
+    showFavoritesRange()
+  }
+
+  if (wasActive && !favoritesMode.active) {
+    returnToFavorites = false
+    closeFavoritesMenu()
+    if (!favoritesPanelEl.classList.contains('hidden')) ToggleFavoritesPanel()
+    const message = FAVORITES_ENDED_MESSAGES[ended]
+    if (message && !stoppingFavorites) showToast(message, 3000)
+    stoppingFavorites = false
+  }
+
   render()
   updateAutoWidth()
-  renderFavoritesControls()
+  renderFavoritesModeBtn()
 }
 
 EventsOn('favorites-mode-changed', applyFavoritesMode)
-GetFavoritesMode().then(applyFavoritesMode)
+GetFavoritesMode().then((status) => applyFavoritesMode(status))
 
 // Stamped in at build time (see internal/app/version.go); reads "dev"
 // for local builds.

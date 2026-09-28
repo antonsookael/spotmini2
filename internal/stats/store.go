@@ -97,6 +97,7 @@ func open(pathFor func(string) (string, error), now time.Time) *Service {
 	if s.fav.Resting == nil {
 		s.fav.Resting = make(map[string]rest)
 	}
+	s.resumeSession(now)
 	return s
 }
 

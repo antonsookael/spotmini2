@@ -53,12 +53,23 @@ type favState struct {
 	Kept    map[string]time.Time `json:"kept"`
 	Dropped map[string]time.Time `json:"dropped"`
 	Resting map[string]rest      `json:"resting"`
+
+	// Whether a mode still running when the app quit picks up again on
+	// the next launch.
+	ResumeOnLaunch bool `json:"resume_on_launch"`
+	// The running mode, kept so there's something to resume. Cleared the
+	// moment the mode ends, so it only survives a quit.
+	Session *session `json:"session,omitempty"`
+}
+
+type session struct {
+	Range string   `json:"range"`
+	Batch []string `json:"batch"`
 }
 
 // mode is favorites mode while it's on.
 type mode struct {
 	timeRange string
-	ranking   []playback.TrackResult
 	batch     []string
 	inBatch   map[string]bool
 	seen      map[string]bool
@@ -169,7 +180,7 @@ func (s *Service) pickBatch(pool []string, scores map[string]float64, now time.T
 }
 
 // Caller holds mu.
-func (s *Service) beginBatch(batch []string, now time.Time) {
+func (s *Service) setBatch(batch []string, now time.Time) {
 	s.mode.batch = batch
 	s.mode.inBatch = make(map[string]bool, len(batch))
 	for _, uri := range batch {
@@ -177,6 +188,15 @@ func (s *Service) beginBatch(batch []string, now time.Time) {
 	}
 	s.mode.seen = make(map[string]bool)
 	s.mode.startedAt = now
+}
+
+// beginBatch makes batch the one the mode is playing.
+//
+// Caller holds mu.
+func (s *Service) beginBatch(batch []string, now time.Time) {
+	s.setBatch(batch, now)
+	s.fav.Session = &session{Range: s.mode.timeRange, Batch: batch}
+	s.saveFav()
 
 	c := s.current
 	if c == nil {
@@ -209,27 +229,28 @@ func (s *Service) startFavorites(timeRange string, ranking []playback.TrackResul
 	if len(pool) == 0 {
 		return nil, ErrNoFavorites
 	}
-	s.mode = &mode{timeRange: timeRange, ranking: ranking}
+	s.mode = &mode{timeRange: timeRange}
 	s.beginBatch(s.pickBatch(pool, scores, now), now)
 	return s.mode.batch, nil
 }
 
 // NextBatch draws a fresh batch for the running mode. False if the mode
-// has been switched off in the meantime.
-func (s *Service) NextBatch() ([]string, bool) {
+// has been switched off in the meantime. ranking is Spotify's top tracks
+// for the mode's range, as for StartFavorites.
+func (s *Service) NextBatch(ranking []playback.TrackResult) ([]string, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.nextBatch(time.Now())
+	return s.nextBatch(ranking, time.Now())
 }
 
 // Caller holds mu.
-func (s *Service) nextBatch(now time.Time) ([]string, bool) {
+func (s *Service) nextBatch(ranking []playback.TrackResult, now time.Time) ([]string, bool) {
 	if s.mode == nil {
 		return nil, false
 	}
-	pool, scores := s.pool(s.mode.timeRange, s.mode.ranking, now)
+	pool, scores := s.pool(s.mode.timeRange, ranking, now)
 	if len(pool) == 0 {
-		s.mode = nil
+		s.stopFavorites()
 		return nil, false
 	}
 	s.beginBatch(s.pickBatch(pool, scores, now), now)
@@ -245,11 +266,48 @@ func (s *Service) StopFavorites() {
 // Caller holds mu.
 func (s *Service) stopFavorites() {
 	s.mode = nil
+	s.fav.Session = nil
+	s.saveFav()
 	// Leaving the mode and then skipping the song it left playing is
 	// just skipping a song.
 	if s.current != nil {
 		s.current.inFavorites = false
 	}
+}
+
+// resumeSession picks up a mode that was running when the app last quit,
+// if that's wanted, and otherwise lets it go.
+//
+// Nothing is replayed: the music is either still one of the batch's
+// songs, and the mode simply carries on, or it isn't, and the first read
+// ends the mode the same way playing something else always does.
+//
+// Caller holds mu.
+func (s *Service) resumeSession(now time.Time) {
+	sess := s.fav.Session
+	if sess == nil {
+		return
+	}
+	if !s.fav.ResumeOnLaunch || !ValidRange(sess.Range) || len(sess.Batch) == 0 {
+		s.fav.Session = nil
+		s.saveFav()
+		return
+	}
+	s.mode = &mode{timeRange: sess.Range}
+	s.setBatch(sess.Batch, now)
+}
+
+func (s *Service) ResumeOnLaunch() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.fav.ResumeOnLaunch
+}
+
+func (s *Service) SetResumeOnLaunch(on bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.fav.ResumeOnLaunch = on
+	s.saveFav()
 }
 
 func (s *Service) Mode() ModeStatus {

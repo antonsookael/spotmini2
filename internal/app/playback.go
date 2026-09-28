@@ -170,7 +170,7 @@ func (a *App) GetNowPlaying() (playback.PlaybackState, error) {
 	}
 	switch a.stats.Observe(state) {
 	case stats.ModeEnded:
-		a.announceFavoritesMode()
+		a.announceFavoritesMode(endedSwitched)
 	case stats.BatchFinished:
 		// Off this goroutine: the frontend is waiting on this read.
 		go a.nextFavoritesBatch()

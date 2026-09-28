@@ -7,6 +7,12 @@
   </head>
   <body>
       <div id="now-playing">
+          <span id="favorites-badge" class="fav-badge" title="Favorites mode">
+            <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z"></path>
+            </svg>
+            Favorites
+          </span>
           <span id="status-dot" class="hidden"></span>
           <span id="track-info">Loading...</span>
           <!--
@@ -33,11 +39,6 @@
               <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
             </svg>
             <span id="loop-one-badge" class="loop-one-badge hidden">1</span>
-          </span>
-          <span id="favorites-icon" class="playback-icon active hidden" title="Favorites mode">
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z"></path>
-            </svg>
           </span>
           <button id="drop-btn" class="hidden" title="Drop from favorites">
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -66,27 +67,36 @@
       </div>
 
       <div id="favorites-panel" class="hidden">
-          <div class="panel-head">
-            <button id="favorites-back-btn" class="panel-back-btn" title="Back">&#8592;</button>
-            <h3>Favorites</h3>
-            <button id="favorites-info-btn" class="info-btn" title="How favorites mode works">i</button>
-            <div class="range-switch">
-              <button data-range="short_term" title="Last 4 weeks">4 wk</button>
-              <button data-range="medium_term" title="Last 6 months">6 mo</button>
-              <button data-range="long_term" title="All time">All</button>
+          <div class="fav-head">
+            <h3>Your favorites</h3>
+            <button id="favorites-stop-btn" class="fav-stop">Stop mode</button>
+            <div class="fav-menu-wrap">
+              <button id="favorites-menu-btn" class="fav-menu-btn" title="More">&#8943;</button>
+              <div id="favorites-menu" class="fav-menu hidden">
+                <button data-fav-menu="theme">Theme</button>
+                <button data-fav-menu="advanced">Advanced</button>
+                <button data-fav-menu="hotkeys">Hotkeys</button>
+                <button data-fav-menu="stats">Listening stats</button>
+                <button data-fav-menu="info" class="fav-menu-quiet">How it works</button>
+              </div>
             </div>
           </div>
           <ul id="favorites-info" class="favorites-info hidden">
-            <li>Plays a mix of your most-played songs for the range you pick. What you've played lately counts the most.</li>
+            <li>Plays a mix of your most-played songs. What you've played lately counts the most.</li>
             <li>Keep listening to a song and it stays in the mix.</li>
             <li>Skipping means "not right now": the song sits out 12 hours, longer if you keep skipping it, then comes back. Switching to something else isn't a skip.</li>
             <li>The &#8856; button on the bar drops a song from the mix for good. Undo it under Dropped.</li>
-            <li>Plays are counted by spotmini while it's running, plus Spotify's recent history.</li>
+            <li>Playing anything else ends favorites mode, and so does Stop mode.</li>
           </ul>
           <div class="panel-body">
-            <div class="favorites-controls">
-              <button id="favorites-start-btn" class="panel-link-btn">Play favorites</button>
-              <span id="favorites-status" class="stats-note"></span>
+            <div class="fav-options">
+              <span class="fav-options-label">Mix from</span>
+              <div class="fav-chips">
+                <button class="fav-chip" data-range="short_term">This month</button>
+                <button class="fav-chip" data-range="medium_term">Half a year</button>
+                <button class="fav-chip" data-range="long_term">All time</button>
+              </div>
+              <p class="fav-options-note">Which stretch of your listening the mix is built from. Changing it starts a fresh mix.</p>
             </div>
             <div id="favorites-list"></div>
           </div>
@@ -188,6 +198,11 @@
             <div class="setting-row">
               <label for="autostart-toggle">Start on startup</label>
               <input type="checkbox" id="autostart-toggle" />
+            </div>
+
+            <div class="setting-row">
+              <label for="resume-favorites-toggle">Reopen in favorites mode</label>
+              <input type="checkbox" id="resume-favorites-toggle" />
             </div>
 
             <!--

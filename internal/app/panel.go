@@ -50,7 +50,13 @@ func (a *App) ShowSettingsPanel() {
 
 // TogglePlaylistsPanel opens/closes the playlist-picker panel, using the
 // same expand/collapse mechanism as ToggleSettingsPanel.
+//
+// Does nothing in favorites mode, which has no playlists: picking one
+// would only end the mode.
 func (a *App) TogglePlaylistsPanel() {
+	if a.stats.Mode().Active {
+		return
+	}
 	a.togglePanel("playlists")
 }
 

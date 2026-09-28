@@ -241,7 +241,7 @@ func TestReachingTheEndOfABatchAsksForTheNext(t *testing.T) {
 	if !s.modeStatus().Active {
 		t.Error("finishing a batch switched the mode off")
 	}
-	if _, ok := s.nextBatch(at.Add(11 * time.Second)); !ok {
+	if _, ok := s.nextBatch(ranking("spotify:track:a"), at.Add(11*time.Second)); !ok {
 		t.Error("no next batch")
 	}
 }
@@ -348,5 +348,58 @@ func TestWakingEndsARestAndItsHistory(t *testing.T) {
 	s.rest("spotify:track:a", t0.Add(3*time.Hour))
 	if got := s.fav.Resting["spotify:track:a"].Until.Sub(t0.Add(3 * time.Hour)); got != baseRest {
 		t.Errorf("the next skip after waking rested it %v, want a fresh %v", got, baseRest)
+	}
+}
+
+func TestTheRunningModeIsSavedAndClearedWhenItEnds(t *testing.T) {
+	s := newTestService(t)
+	batch, err := s.startFavorites(playback.RangeMedium, ranking("spotify:track:a"), t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.fav.Session == nil || s.fav.Session.Range != playback.RangeMedium || !slices.Equal(s.fav.Session.Batch, batch) {
+		t.Fatalf("session = %+v, want the running batch", s.fav.Session)
+	}
+	s.StopFavorites()
+	if s.fav.Session != nil {
+		t.Error("stopping the mode left a session to resume")
+	}
+}
+
+// reopenMidMode quits and relaunches with favorites mode running, with
+// resuming on or off.
+func reopenMidMode(t *testing.T, resume bool) *Service {
+	t.Helper()
+	s := newTestService(t)
+	s.fav.ResumeOnLaunch = resume
+	favoritesPlaying(t, s, "spotify:track:a", t0)
+	return open(s.pathFor, t0.Add(time.Hour))
+}
+
+func TestRelaunchingResumesOnlyWhenAskedTo(t *testing.T) {
+	if s := reopenMidMode(t, false); s.modeStatus().Active || s.fav.Session != nil {
+		t.Error("relaunched into favorites mode with resuming off")
+	}
+
+	s := reopenMidMode(t, true)
+	if !s.modeStatus().Active || s.modeStatus().Range != playback.RangeShort {
+		t.Fatalf("mode = %+v after relaunching with resuming on", s.modeStatus())
+	}
+	// Still playing one of its songs, so it carries on - as favorites.
+	if got := s.observe(state("spotify:track:a", 30*time.Second, true), t0.Add(time.Hour+10*time.Second)); got != NoChange {
+		t.Errorf("got %v on a batch song, want NoChange", got)
+	}
+	if !s.current.inFavorites {
+		t.Error("the resumed song isn't being counted as favorites")
+	}
+}
+
+func TestAResumedModeEndsIfSomethingElseIsPlaying(t *testing.T) {
+	s := reopenMidMode(t, true)
+	if got := s.observe(state("spotify:track:elsewhere", 0, true), t0.Add(time.Hour+10*time.Second)); got != ModeEnded {
+		t.Errorf("got %v, want ModeEnded", got)
+	}
+	if s.fav.Session != nil {
+		t.Error("the ended mode is still saved to resume")
 	}
 }

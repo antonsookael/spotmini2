@@ -548,29 +548,6 @@ body {
   color: var(--accent-color);
 }
 
-.info-btn {
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
-  border: 1px solid #282828;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--fg);
-  opacity: 0.7;
-  font-size: 11px;
-  font-weight: 700;
-  font-family: Georgia, serif;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.info-btn:hover,
-.info-btn.active {
-  opacity: 1;
-  border-color: var(--accent-color);
-  color: var(--accent-color);
-}
-
 .favorites-info {
   flex-shrink: 0;
   margin: 0 0 8px;
@@ -585,16 +562,162 @@ body {
   margin-top: 3px;
 }
 
-.favorites-controls {
+/* --- Favorites mode as its own app. First pass; everything that changes
+   the normal app is scoped to body.favorites-app. --- */
+.fav-badge {
+  display: none;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  margin-right: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-color) 15%, transparent);
+  color: var(--accent-color);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  --wails-draggable: no-drag;
+}
+
+.fav-badge.paused {
+  opacity: 0.6;
+}
+
+body.favorites-app .fav-badge {
+  display: inline-flex;
+}
+
+/* Inset rather than a border, so switching in and out of the mode doesn't
+   move anything by the line's height. */
+body.favorites-app #now-playing {
+  box-shadow: inset 0 -2px 0 var(--accent-color);
+}
+
+body.favorites-app #status-dot,
+body.favorites-app #shuffle-icon,
+body.favorites-app #playlists-toggle-btn {
+  display: none !important;
+}
+
+.fav-head {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-bottom: 8px;
+}
+
+#favorites-panel .fav-head h3 {
+  margin-right: auto;
+  font-size: 15px;
+}
+
+.fav-stop {
+  padding: 3px 10px;
+  border: 1px solid rgba(255, 85, 85, 0.45);
+  border-radius: 6px;
+  background: transparent;
+  color: #ff7a7a;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.fav-stop:hover {
+  border-color: #ff5555;
+  background: rgba(255, 85, 85, 0.08);
+}
+
+.fav-menu-wrap {
+  position: relative;
+}
+
+.fav-menu-btn {
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--accent-color);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.fav-menu-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.fav-menu {
+  position: absolute;
+  right: 0;
+  top: 26px;
+  z-index: 5;
+  min-width: 150px;
+  padding: 4px 0;
+  border: 1px solid #333;
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.fav-menu button {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  background: none;
+  color: var(--fg);
+  font-size: 12px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fav-menu button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--accent-color);
+}
+
+.fav-menu .fav-menu-quiet {
+  opacity: 0.7;
+}
+
+.fav-options {
   padding: 0 8px 4px;
 }
 
-.favorites-controls .panel-link-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
+.fav-options-label,
+.fav-options-note {
+  font-size: 10px;
+  color: #757575;
+}
+
+.fav-chips {
+  display: flex;
+  gap: 6px;
+  margin: 4px 0;
+}
+
+.fav-chip {
+  padding: 3px 10px;
+  border: 1px solid #333;
+  border-radius: 999px;
+  background: none;
+  color: var(--fg);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.fav-chip.on {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+  background: color-mix(in srgb, var(--accent-color) 10%, transparent);
+}
+
+.track-item.playing .stat-detail {
+  color: var(--accent-color);
 }
 
 /* Dimmed per part rather than on the row, so the Wake button on it
