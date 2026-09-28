@@ -43,6 +43,19 @@ func (a *App) StartFavorites(timeRange string) error {
 // would claim a mode that isn't happening.
 func (a *App) playFavoritesBatch(name string, batch []string) {
 	err := a.withTrackChange(name, func(token string) error {
+		// Before the play request, so the batch starts at the top in the
+		// mode's own order. Shuffle would throw away the head start the
+		// biggest favorites were given, and repeat-all would replay this
+		// batch instead of letting the next one be drawn. Repeat-one is
+		// left alone: looping a favorite is still listening to it.
+		if err := playback.ToggleShuffle(token, false); err != nil {
+			return err
+		}
+		if repeat, err := playback.GetRepeatState(token); err == nil && repeat == "context" {
+			if err := playback.SetRepeatState(token, "off"); err != nil {
+				return err
+			}
+		}
 		return playback.PlayURIs(token, batch)
 	})
 	if err != nil {

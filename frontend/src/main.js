@@ -167,7 +167,8 @@ function render() {
   statusDotEl.classList.toggle('playing', isCurrentlyPlaying)
   statusDotEl.classList.toggle('paused', !isCurrentlyPlaying)
 
-  shuffleIconEl.classList.remove('hidden')
+  // Favorites mode does its own shuffling and turns Spotify's off.
+  shuffleIconEl.classList.toggle('hidden', favoritesMode.active)
   shuffleIconEl.classList.toggle('active', isShuffled)
 
   loopIconEl.classList.remove('hidden')
