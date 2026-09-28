@@ -6,8 +6,46 @@ import (
 
 // ToggleSettingsPanel opens/closes the customize panel, resizing (and, if
 // there isn't room to grow downward, repositioning) the window to fit it.
+//
+// It's what the settings hotkey and gear do, so while favorites mode is
+// on it opens the mode's own panel instead: the mode's controls are what
+// there is to adjust then, and the regular settings are a back arrow
+// away from there.
 func (a *App) ToggleSettingsPanel() {
-	a.togglePanel("settings")
+	a.panelMu.Lock()
+	open := a.expandedPanel
+	a.panelMu.Unlock()
+
+	a.togglePanel(settingsToggleTarget(open, a.stats.Mode().Active))
+}
+
+// settingsToggleTarget is the panel ToggleSettingsPanel toggles, given
+// the one open now: toggling the open one is what closes it.
+func settingsToggleTarget(open string, favoritesOn bool) string {
+	switch open {
+	case "", "playlists":
+		if favoritesOn {
+			return "favorites"
+		}
+		return "settings"
+	}
+	// Settings or a page reached from it. The hotkey opens and closes the
+	// whole thing - stepping back to the first page instead left it
+	// taking two presses to put away.
+	return open
+}
+
+// ShowSettingsPanel opens the regular settings, for the back arrows that
+// lead there. Unlike ToggleSettingsPanel it never redirects to favorites
+// and never closes the window.
+func (a *App) ShowSettingsPanel() {
+	a.panelMu.Lock()
+	open := a.expandedPanel
+	a.panelMu.Unlock()
+
+	if open != "settings" {
+		a.togglePanel("settings")
+	}
 }
 
 // TogglePlaylistsPanel opens/closes the playlist-picker panel, using the

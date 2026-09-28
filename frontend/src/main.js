@@ -4,6 +4,7 @@ import {
   GetHotkeyConfig,
   SetHotkeyBinding,
   ToggleSettingsPanel,
+  ShowSettingsPanel,
   TogglePlaylistsPanel,
   ToggleHotkeysPanel,
   ToggleFavoritesPanel,
@@ -565,6 +566,7 @@ EventsOn('panel-changed', (panel) => {
     openPlaylistsPanel()
   }
   if (panel === 'favorites') {
+    noteFavoritesOrigin()
     renderFavorites()
   }
   if (panel === 'stats') {
@@ -1201,7 +1203,7 @@ document.getElementById('hotkeys-open-btn').addEventListener('click', () => {
 })
 
 document.getElementById('hotkeys-back-btn').addEventListener('click', () => {
-  ToggleSettingsPanel()
+  ShowSettingsPanel()
 })
 
 // --- Settings pages ---
@@ -1295,7 +1297,7 @@ document.getElementById('stats-open-btn').addEventListener('click', () => {
 })
 
 document.getElementById('stats-back-btn').addEventListener('click', () => {
-  ToggleSettingsPanel()
+  ShowSettingsPanel()
 })
 
 function dayChart(days) {
@@ -1386,25 +1388,47 @@ const favoritesRange = rangeSwitch(document.querySelector('#favorites-panel .ran
   renderFavorites()
 )
 let favoritesSeq = 0
-// Where favorites was opened from, which is where back goes. Playlists
-// unless it came from settings, since that's where it's pinned.
-let favoritesOrigin = 'playlists'
+// Where back goes from favorites. Whatever opens the panel names where
+// it came from; an open nobody named - the settings hotkey and gear,
+// which lead here while the mode is on - counts as settings.
+let favoritesOrigin = null
+let favoritesBackTo = 'settings'
 
 function openFavoritesPanel(origin) {
   favoritesOrigin = origin
   ToggleFavoritesPanel()
 }
 
-document.getElementById('favorites-open-btn').addEventListener('click', () => {
-  openFavoritesPanel('settings')
-})
+function noteFavoritesOrigin() {
+  favoritesBackTo = favoritesOrigin || 'settings'
+  favoritesOrigin = null
+}
 
 document.getElementById('favorites-back-btn').addEventListener('click', () => {
-  if (favoritesOrigin === 'settings') {
-    ToggleSettingsPanel()
-  } else {
+  if (favoritesBackTo === 'playlists') {
     TogglePlaylistsPanel()
+  } else {
+    ShowSettingsPanel()
   }
+})
+
+// Starts the mode outright rather than just opening its panel - the row
+// is named for the mode, not the list. Once it's on, it's the way back in.
+const favoritesModeBtn = document.getElementById('favorites-mode-btn')
+favoritesModeBtn.addEventListener('click', () => {
+  if (favoritesMode.active) {
+    openFavoritesPanel('settings')
+    return
+  }
+  favoritesModeBtn.disabled = true
+  favoritesModeBtn.textContent = 'Starting...'
+  StartFavorites(favoritesRange())
+    .then(() => openFavoritesPanel('settings'))
+    .catch((err) => showToast(String((err && err.message) || err), 2500))
+    .finally(() => {
+      favoritesModeBtn.disabled = false
+      renderFavoritesControls()
+    })
 })
 
 document.getElementById('favorites-info-btn').addEventListener('click', (e) => {
@@ -1420,6 +1444,7 @@ function formatRest(until) {
 function renderFavoritesControls() {
   favoritesStartBtn.textContent = favoritesMode.active ? 'Stop favorites' : 'Play favorites'
   favoritesStatusEl.textContent = favoritesMode.active ? `Playing favorites · ${RANGE_LABELS[favoritesMode.range]}` : ''
+  if (!favoritesModeBtn.disabled) favoritesModeBtn.textContent = favoritesMode.active ? 'Open' : 'Start'
 }
 
 async function renderFavorites() {
@@ -1515,7 +1540,7 @@ dropBtn.addEventListener('click', () => {
 
 // The heart is a shortcut to the mode's own panel.
 favoritesIconEl.addEventListener('click', () => {
-  if (favoritesPanelEl.classList.contains('hidden')) openFavoritesPanel('playlists')
+  if (favoritesPanelEl.classList.contains('hidden')) ToggleFavoritesPanel()
 })
 
 function applyFavoritesMode(status) {
