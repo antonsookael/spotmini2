@@ -67,11 +67,8 @@
 
       <div id="favorites-panel" class="hidden">
           <div class="panel-head">
-            <button id="favorites-back-btn" class="panel-back-btn" title="Back">&#8592;</button>
-            <div class="panel-tabs">
-              <button class="panel-tab" data-tab="favorites">Favorites</button>
-              <button class="panel-tab" data-tab="stats">Stats</button>
-            </div>
+            <button id="favorites-back-btn" class="panel-back-btn" title="Back to playlists">&#8592;</button>
+            <h3>Favorites</h3>
             <button id="favorites-info-btn" class="info-btn" title="How favorites mode works">i</button>
             <div class="range-switch">
               <button data-range="short_term" title="Last 4 weeks">4 wk</button>
@@ -86,103 +83,141 @@
             <li>The &#8856; button on the bar drops a song from the mix for good. Undo it under Dropped.</li>
             <li>Plays are counted by spotmini while it's running, plus Spotify's recent history.</li>
           </ul>
-          <div id="favorites-tab" class="panel-body hidden">
+          <div class="panel-body">
             <div class="favorites-controls">
               <button id="favorites-start-btn" class="panel-link-btn">Play favorites</button>
               <span id="favorites-status" class="stats-note"></span>
             </div>
             <div id="favorites-list"></div>
           </div>
-          <div id="stats-tab" class="panel-body hidden"></div>
+      </div>
+
+      <div id="stats-panel" class="hidden">
+          <div class="panel-head">
+            <button id="stats-back-btn" class="panel-back-btn" title="Back to settings">&#8592;</button>
+            <h3>Listening stats</h3>
+            <div class="range-switch">
+              <button data-range="short_term" title="Last 4 weeks">4 wk</button>
+              <button data-range="medium_term" title="Last 6 months">6 mo</button>
+              <button data-range="long_term" title="All time">All</button>
+            </div>
+          </div>
+          <div id="stats-body" class="panel-body"></div>
       </div>
 
       <div id="settings-panel" class="hidden">
-          <h3>Customize</h3>
+          <div id="settings-main">
+            <h3>Customize</h3>
 
-          <div class="setting-row">
-            <label for="accent-color-input">Accent color</label>
-            <input type="color" id="accent-color-input" value="#1db954" />
-          </div>
-
-          <div class="setting-row">
-            <label for="bg-color-input">Background color</label>
-            <input type="color" id="bg-color-input" value="#121212" />
-          </div>
-
-          <div class="setting-row">
-            <label for="bg-gradient-toggle">Gradient background</label>
-            <input type="checkbox" id="bg-gradient-toggle" />
-          </div>
-
-          <div class="setting-row hidden" id="bg-gradient-row">
-            <label for="bg-gradient-color-input">Gradient color</label>
-            <input type="color" id="bg-gradient-color-input" value="#1db954" />
-          </div>
-
-          <div class="setting-row">
-            <label for="edge-snap-toggle">Edge snapping</label>
-            <input type="checkbox" id="edge-snap-toggle" checked />
-          </div>
-
-          <div class="setting-row">
-            <label for="auto-fit-toggle">Auto-fit window width</label>
-            <input type="checkbox" id="auto-fit-toggle" />
-          </div>
-
-          <div class="setting-row">
-            <label for="always-on-top-toggle">Always on top</label>
-            <input type="checkbox" id="always-on-top-toggle" checked />
-          </div>
-
-          <div class="setting-row">
-            <label for="autostart-toggle">Start on startup</label>
-            <input type="checkbox" id="autostart-toggle" />
-          </div>
-
-          <!--
-            Hotkey rebinding UI is hidden for now (backend in app.go /
-            hotkeys/config.go and the recordHotkey() wiring in main.js
-            are untouched - re-add the rows below to bring it back):
-
-            <h3>Hotkeys</h3>
             <div class="setting-row">
-              <label>Toggle settings</label>
-              <button class="hotkey-btn" data-action="settings">...</button>
+              <label>Theme</label>
+              <button class="panel-link-btn" data-settings-page="theme">View</button>
             </div>
-            <div class="setting-row">
-              <label>Play / Pause</label>
-              <button class="hotkey-btn" data-action="playPause">...</button>
-            </div>
-            <div class="setting-row">
-              <label>Next track</label>
-              <button class="hotkey-btn" data-action="next">...</button>
-            </div>
-            <div class="setting-row">
-              <label>Previous track</label>
-              <button class="hotkey-btn" data-action="previous">...</button>
-            </div>
-            <div class="setting-row">
-              <label>Shuffle</label>
-              <button class="hotkey-btn" data-action="shuffle">...</button>
-            </div>
-            <div class="setting-row">
-              <label>Loop</label>
-              <button class="hotkey-btn" data-action="loop">...</button>
-            </div>
-            <p class="hint">Click a hotkey to change it, then press the new combo (Esc to cancel)</p>
-          -->
 
-          <div class="setting-row">
-            <label>Hotkeys</label>
-            <button id="hotkeys-open-btn" class="panel-link-btn">View</button>
+            <div class="setting-row">
+              <label>Advanced</label>
+              <button class="panel-link-btn" data-settings-page="advanced">View</button>
+            </div>
+
+            <div class="setting-row">
+              <label>Hotkeys</label>
+              <button id="hotkeys-open-btn" class="panel-link-btn">View</button>
+            </div>
+
+            <div class="setting-row">
+              <label>Listening stats</label>
+              <button id="stats-open-btn" class="panel-link-btn">View</button>
+            </div>
+
+            <p id="app-version"></p>
           </div>
 
-          <div class="setting-row">
-            <label>Listening stats</label>
-            <button id="stats-open-btn" class="panel-link-btn">View</button>
+          <div id="settings-theme" class="hidden">
+            <div class="panel-head">
+              <button class="panel-back-btn settings-back-btn" title="Back to settings">&#8592;</button>
+              <h3>Theme</h3>
+            </div>
+
+            <div class="setting-row">
+              <label for="accent-color-input">Accent color</label>
+              <input type="color" id="accent-color-input" value="#1db954" />
+            </div>
+
+            <div class="setting-row">
+              <label for="bg-color-input">Background color</label>
+              <input type="color" id="bg-color-input" value="#121212" />
+            </div>
+
+            <div class="setting-row">
+              <label for="bg-gradient-toggle">Gradient background</label>
+              <input type="checkbox" id="bg-gradient-toggle" />
+            </div>
+
+            <div class="setting-row hidden" id="bg-gradient-row">
+              <label for="bg-gradient-color-input">Gradient color</label>
+              <input type="color" id="bg-gradient-color-input" value="#1db954" />
+            </div>
           </div>
 
-          <p id="app-version"></p>
+          <div id="settings-advanced" class="hidden">
+            <div class="panel-head">
+              <button class="panel-back-btn settings-back-btn" title="Back to settings">&#8592;</button>
+              <h3>Advanced</h3>
+            </div>
+
+            <div class="setting-row">
+              <label for="edge-snap-toggle">Edge snapping</label>
+              <input type="checkbox" id="edge-snap-toggle" checked />
+            </div>
+
+            <div class="setting-row">
+              <label for="auto-fit-toggle">Auto-fit window width</label>
+              <input type="checkbox" id="auto-fit-toggle" />
+            </div>
+
+            <div class="setting-row">
+              <label for="always-on-top-toggle">Always on top</label>
+              <input type="checkbox" id="always-on-top-toggle" checked />
+            </div>
+
+            <div class="setting-row">
+              <label for="autostart-toggle">Start on startup</label>
+              <input type="checkbox" id="autostart-toggle" />
+            </div>
+
+            <!--
+              Hotkey rebinding UI is hidden for now (backend in app.go /
+              hotkeys/config.go and the recordHotkey() wiring in main.js
+              are untouched - re-add the rows below to bring it back):
+
+              <h3>Hotkeys</h3>
+              <div class="setting-row">
+                <label>Toggle settings</label>
+                <button class="hotkey-btn" data-action="settings">...</button>
+              </div>
+              <div class="setting-row">
+                <label>Play / Pause</label>
+                <button class="hotkey-btn" data-action="playPause">...</button>
+              </div>
+              <div class="setting-row">
+                <label>Next track</label>
+                <button class="hotkey-btn" data-action="next">...</button>
+              </div>
+              <div class="setting-row">
+                <label>Previous track</label>
+                <button class="hotkey-btn" data-action="previous">...</button>
+              </div>
+              <div class="setting-row">
+                <label>Shuffle</label>
+                <button class="hotkey-btn" data-action="shuffle">...</button>
+              </div>
+              <div class="setting-row">
+                <label>Loop</label>
+                <button class="hotkey-btn" data-action="loop">...</button>
+              </div>
+              <p class="hint">Click a hotkey to change it, then press the new combo (Esc to cancel)</p>
+            -->
+          </div>
       </div>
 
     <script src="./src/main.js" type="module"></script>

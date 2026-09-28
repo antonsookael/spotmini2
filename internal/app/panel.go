@@ -24,9 +24,15 @@ func (a *App) ToggleHotkeysPanel() {
 	a.togglePanel("hotkeys")
 }
 
-// ToggleFavoritesPanel opens/closes the favorites and stats panel.
+// ToggleFavoritesPanel opens/closes favorites mode's panel.
 func (a *App) ToggleFavoritesPanel() {
 	a.togglePanel("favorites")
+}
+
+// ToggleStatsPanel opens/closes the listening stats, reached from
+// settings.
+func (a *App) ToggleStatsPanel() {
+	a.togglePanel("stats")
 }
 
 // ToggleAlwaysOnTop lets the frontend flip the setting - it owns the

@@ -470,7 +470,8 @@ body {
   margin-bottom: 8px;
 }
 
-.panel-head h3 {
+.panel-head h3,
+#settings-panel .panel-head h3 {
   margin-bottom: 0;
 }
 
@@ -526,8 +527,9 @@ body {
   color: var(--fg);
 }
 
-/* --- Favorites & stats panel. Plain first pass, restyled later. --- */
-#favorites-panel {
+/* --- Favorites and stats panels. Plain first pass, restyled later. --- */
+#favorites-panel,
+#stats-panel {
   width: 100%;
   flex: 1;
   min-height: 0;
@@ -540,25 +542,9 @@ body {
   font-family: -apple-system, "Segoe UI", sans-serif;
 }
 
-.panel-tabs {
-  display: flex;
-  gap: 4px;
-}
-
-.panel-tab {
-  padding: 2px 4px;
-  border: none;
-  background: none;
-  color: var(--fg);
-  opacity: 0.6;
-  font-size: 13px;
-  font-weight: 600;
-  font-family: inherit;
-  cursor: pointer;
-}
-
-.panel-tab.active {
-  opacity: 1;
+#favorites-panel h3,
+#stats-panel h3 {
+  font-size: 14px;
   color: var(--accent-color);
 }
 

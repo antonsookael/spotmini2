@@ -7,6 +7,7 @@ import {
   TogglePlaylistsPanel,
   ToggleHotkeysPanel,
   ToggleFavoritesPanel,
+  ToggleStatsPanel,
   GetLocalStats,
   GetSpotifyTop,
   GetFavorites,
@@ -553,13 +554,19 @@ EventsOn('panel-changed', (panel) => {
   document.getElementById('playlists-panel').classList.toggle('hidden', panel !== 'playlists')
   document.getElementById('hotkeys-panel').classList.toggle('hidden', panel !== 'hotkeys')
   document.getElementById('favorites-panel').classList.toggle('hidden', panel !== 'favorites')
+  document.getElementById('stats-panel').classList.toggle('hidden', panel !== 'stats')
 
+  if (panel === 'settings') {
+    showSettingsPage('main')
+  }
   if (panel === 'playlists') {
     openPlaylistsPanel()
   }
   if (panel === 'favorites') {
-    showFavoritesTab()
-    renderFavoritesPanel()
+    renderFavorites()
+  }
+  if (panel === 'stats') {
+    renderStats()
   }
   updatePanelHeight()
 })
@@ -572,16 +579,16 @@ const PANEL_MAX_HEIGHT = 340
 
 function updatePanelHeight() {
   const panel = document.querySelector(
-    '#settings-panel:not(.hidden), #playlists-panel:not(.hidden), #hotkeys-panel:not(.hidden), #favorites-panel:not(.hidden)'
+    '#settings-panel:not(.hidden), #playlists-panel:not(.hidden), #hotkeys-panel:not(.hidden), #favorites-panel:not(.hidden), #stats-panel:not(.hidden)'
   )
   if (!panel) return
 
   // Playlists is fixed rather than measured. Its list loads
   // asynchronously, so measuring on open catches it empty - and even
   // once loaded, sizing to it would make the window jump on every
-  // keystroke as the search filters the list down. Favorites loads the
-  // same way, and would jump on every range switch.
-  if (panel.id === 'playlists-panel' || panel.id === 'favorites-panel') {
+  // keystroke as the search filters the list down. Favorites and stats
+  // load the same way, and would jump on every range switch.
+  if (panel.id === 'playlists-panel' || panel.id === 'favorites-panel' || panel.id === 'stats-panel') {
     SetPanelHeight(PANEL_MAX_HEIGHT)
     return
   }
@@ -646,7 +653,7 @@ function renderResults(playlists, tracks) {
         if (playlist.favorites) {
           // Switches panels rather than playing: the mode has its own
           // range and controls to pick from first.
-          openFavoritesPanel('favorites', 'playlists')
+          ToggleFavoritesPanel()
           return
         }
         if (playlist.liked) {
@@ -1195,32 +1202,48 @@ document.getElementById('hotkeys-back-btn').addEventListener('click', () => {
   ToggleSettingsPanel()
 })
 
-// --- Favorites & stats panel ---
-const statsTabEl = document.getElementById('stats-tab')
-const rangeButtons = document.querySelectorAll('#favorites-panel .range-switch button')
+// --- Settings pages ---
+// Theme and Advanced are pages inside the settings panel rather than
+// panels of their own: they're only ever reached from it.
+const SETTINGS_PAGES = ['main', 'theme', 'advanced']
 
-let statsRange = localStorage.getItem('statsRange') || 'short_term'
-// Bumped per render so a slow answer for a range the user has already
-// switched away from doesn't overwrite the one they're looking at.
-let statsSeq = 0
-// Where the panel was opened from, which is where back goes.
-let favoritesOrigin = 'settings'
-
-function showRange() {
-  for (const btn of rangeButtons) {
-    btn.classList.toggle('active', btn.dataset.range === statsRange)
+function showSettingsPage(page) {
+  for (const p of SETTINGS_PAGES) {
+    document.getElementById(`settings-${p}`).classList.toggle('hidden', p !== page)
   }
+  updatePanelHeight()
 }
-showRange()
 
-for (const btn of rangeButtons) {
-  btn.addEventListener('click', () => {
-    if (btn.dataset.range === statsRange) return
-    statsRange = btn.dataset.range
-    localStorage.setItem('statsRange', statsRange)
-    showRange()
-    renderFavoritesPanel()
-  })
+for (const btn of document.querySelectorAll('[data-settings-page]')) {
+  btn.addEventListener('click', () => showSettingsPage(btn.dataset.settingsPage))
+}
+
+for (const btn of document.querySelectorAll('.settings-back-btn')) {
+  btn.addEventListener('click', () => showSettingsPage('main'))
+}
+
+// --- Shared by the stats and favorites panels ---
+const RANGE_LABELS = { short_term: '4 weeks', medium_term: '6 months', long_term: 'all time' }
+
+// Wires up a 4 wk / 6 mo / All switch whose choice is remembered under
+// storageKey. Returns a getter for the current choice.
+function rangeSwitch(container, storageKey, onChange) {
+  const buttons = container.querySelectorAll('button')
+  let value = localStorage.getItem(storageKey) || 'short_term'
+  const show = () => {
+    for (const btn of buttons) btn.classList.toggle('active', btn.dataset.range === value)
+  }
+  show()
+  for (const btn of buttons) {
+    btn.addEventListener('click', () => {
+      if (btn.dataset.range === value) return
+      value = btn.dataset.range
+      localStorage.setItem(storageKey, value)
+      show()
+      onChange()
+    })
+  }
+  return () => value
 }
 
 function formatMinutes(minutes) {
@@ -1258,6 +1281,21 @@ function statArtistRow(name, detail) {
   return row
 }
 
+// --- Stats panel ---
+const statsBodyEl = document.getElementById('stats-body')
+const statsRange = rangeSwitch(document.querySelector('#stats-panel .range-switch'), 'statsRange', () => renderStats())
+// Bumped per render so a slow answer for a range the user has already
+// switched away from doesn't overwrite the one they're looking at.
+let statsSeq = 0
+
+document.getElementById('stats-open-btn').addEventListener('click', () => {
+  ToggleStatsPanel()
+})
+
+document.getElementById('stats-back-btn').addEventListener('click', () => {
+  ToggleSettingsPanel()
+})
+
 function dayChart(days) {
   const wrap = makeEl('div')
   const chart = makeEl('div', 'day-chart')
@@ -1279,8 +1317,8 @@ function dayChart(days) {
 
 async function renderStats() {
   const seq = ++statsSeq
-  const range = statsRange
-  statsTabEl.replaceChildren(makeEl('div', 'playlist-empty', 'Loading...'))
+  const range = statsRange()
+  statsBodyEl.replaceChildren(makeEl('div', 'playlist-empty', 'Loading...'))
 
   const [localResult, topResult] = await Promise.allSettled([GetLocalStats(range), GetSpotifyTop(range)])
   if (seq !== statsSeq) return
@@ -1333,69 +1371,28 @@ async function renderStats() {
     out.push(makeEl('div', 'playlist-empty', String((topResult.reason && topResult.reason.message) || topResult.reason)))
   }
 
-  statsTabEl.replaceChildren(...out)
-  statsTabEl.scrollTop = 0
+  statsBodyEl.replaceChildren(...out)
+  statsBodyEl.scrollTop = 0
 }
 
-document.getElementById('favorites-back-btn').addEventListener('click', () => {
-  if (favoritesOrigin === 'playlists') {
-    TogglePlaylistsPanel()
-  } else {
-    ToggleSettingsPanel()
-  }
-})
-
-const favoritesTabEl = document.getElementById('favorites-tab')
+// --- Favorites panel ---
+const favoritesPanelEl = document.getElementById('favorites-panel')
 const favoritesListEl = document.getElementById('favorites-list')
 const favoritesStartBtn = document.getElementById('favorites-start-btn')
 const favoritesStatusEl = document.getElementById('favorites-status')
-const tabButtons = document.querySelectorAll('#favorites-panel .panel-tab')
+const favoritesRange = rangeSwitch(document.querySelector('#favorites-panel .range-switch'), 'favoritesRange', () =>
+  renderFavorites()
+)
+let favoritesSeq = 0
 
-const RANGE_LABELS = { short_term: '4 weeks', medium_term: '6 months', long_term: 'all time' }
-
-let favoritesTab = localStorage.getItem('favoritesTab') || 'favorites'
-
-// The tab is set before the panel opens, so the panel-changed handler
-// renders the right one straight away.
-function openFavoritesPanel(tab, origin) {
-  favoritesTab = tab
-  favoritesOrigin = origin
-  ToggleFavoritesPanel()
-}
-
-function showFavoritesTab() {
-  for (const btn of tabButtons) {
-    btn.classList.toggle('active', btn.dataset.tab === favoritesTab)
-  }
-  favoritesTabEl.classList.toggle('hidden', favoritesTab !== 'favorites')
-  statsTabEl.classList.toggle('hidden', favoritesTab !== 'stats')
-}
-
-function renderFavoritesPanel() {
-  if (favoritesTab === 'stats') {
-    renderStats()
-  } else {
-    renderFavorites()
-  }
-}
-
-for (const btn of tabButtons) {
-  btn.addEventListener('click', () => {
-    if (btn.dataset.tab === favoritesTab) return
-    favoritesTab = btn.dataset.tab
-    localStorage.setItem('favoritesTab', favoritesTab)
-    showFavoritesTab()
-    renderFavoritesPanel()
-  })
-}
+// Back from favorites goes to the playlists panel, where it's pinned.
+document.getElementById('favorites-back-btn').addEventListener('click', () => {
+  TogglePlaylistsPanel()
+})
 
 document.getElementById('favorites-info-btn').addEventListener('click', (e) => {
   const hidden = document.getElementById('favorites-info').classList.toggle('hidden')
   e.currentTarget.classList.toggle('active', !hidden)
-})
-
-document.getElementById('stats-open-btn').addEventListener('click', () => {
-  openFavoritesPanel('stats', 'settings')
 })
 
 function formatRest(until) {
@@ -1409,8 +1406,8 @@ function renderFavoritesControls() {
 }
 
 async function renderFavorites() {
-  const seq = ++statsSeq
-  const range = statsRange
+  const seq = ++favoritesSeq
+  const range = favoritesRange()
   renderFavoritesControls()
   favoritesListEl.replaceChildren(makeEl('div', 'playlist-empty', 'Loading...'))
 
@@ -1418,11 +1415,11 @@ async function renderFavorites() {
   try {
     view = await GetFavorites(range)
   } catch (err) {
-    if (seq !== statsSeq) return
+    if (seq !== favoritesSeq) return
     favoritesListEl.replaceChildren(makeEl('div', 'playlist-empty', String((err && err.message) || err)))
     return
   }
-  if (seq !== statsSeq) return
+  if (seq !== favoritesSeq) return
 
   const out = []
   const pool = view.pool || []
@@ -1468,7 +1465,7 @@ favoritesStartBtn.addEventListener('click', () => {
     return
   }
   favoritesStartBtn.disabled = true
-  StartFavorites(statsRange)
+  StartFavorites(favoritesRange())
     .catch((err) => showToast(String((err && err.message) || err), 2500))
     .finally(() => {
       favoritesStartBtn.disabled = false
@@ -1480,9 +1477,7 @@ dropBtn.addEventListener('click', () => {
   DropCurrentFavorite()
     .then((name) => {
       showToast(`Dropped ${name}`, 2000)
-      if (!document.getElementById('favorites-panel').classList.contains('hidden') && favoritesTab === 'favorites') {
-        renderFavorites()
-      }
+      if (!favoritesPanelEl.classList.contains('hidden')) renderFavorites()
     })
     .catch((err) => showToast(String((err && err.message) || err), 2500))
     .finally(() => {
@@ -1492,8 +1487,7 @@ dropBtn.addEventListener('click', () => {
 
 // The heart is a shortcut to the mode's own panel.
 favoritesIconEl.addEventListener('click', () => {
-  if (!document.getElementById('favorites-panel').classList.contains('hidden')) return
-  openFavoritesPanel('favorites', 'playlists')
+  if (favoritesPanelEl.classList.contains('hidden')) ToggleFavoritesPanel()
 })
 
 function applyFavoritesMode(status) {
