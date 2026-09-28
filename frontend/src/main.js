@@ -653,7 +653,7 @@ function renderResults(playlists, tracks) {
         if (playlist.favorites) {
           // Switches panels rather than playing: the mode has its own
           // range and controls to pick from first.
-          ToggleFavoritesPanel()
+          openFavoritesPanel('playlists')
           return
         }
         if (playlist.liked) {
@@ -1384,10 +1384,25 @@ const favoritesRange = rangeSwitch(document.querySelector('#favorites-panel .ran
   renderFavorites()
 )
 let favoritesSeq = 0
+// Where favorites was opened from, which is where back goes. Playlists
+// unless it came from settings, since that's where it's pinned.
+let favoritesOrigin = 'playlists'
 
-// Back from favorites goes to the playlists panel, where it's pinned.
+function openFavoritesPanel(origin) {
+  favoritesOrigin = origin
+  ToggleFavoritesPanel()
+}
+
+document.getElementById('favorites-open-btn').addEventListener('click', () => {
+  openFavoritesPanel('settings')
+})
+
 document.getElementById('favorites-back-btn').addEventListener('click', () => {
-  TogglePlaylistsPanel()
+  if (favoritesOrigin === 'settings') {
+    ToggleSettingsPanel()
+  } else {
+    TogglePlaylistsPanel()
+  }
 })
 
 document.getElementById('favorites-info-btn').addEventListener('click', (e) => {
@@ -1487,7 +1502,7 @@ dropBtn.addEventListener('click', () => {
 
 // The heart is a shortcut to the mode's own panel.
 favoritesIconEl.addEventListener('click', () => {
-  if (favoritesPanelEl.classList.contains('hidden')) ToggleFavoritesPanel()
+  if (favoritesPanelEl.classList.contains('hidden')) openFavoritesPanel('playlists')
 })
 
 function applyFavoritesMode(status) {
