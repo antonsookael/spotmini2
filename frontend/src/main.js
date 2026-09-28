@@ -16,6 +16,7 @@ import {
   StopFavorites,
   DropCurrentFavorite,
   UndropFavorite,
+  WakeFavorite,
   GetPlaylists,
   PlayPlaylist,
   PlayLikedSongs,
@@ -1448,7 +1449,18 @@ async function renderFavorites() {
     else if (t.kept) detail.push('kept')
     detail.push(t.score.toFixed(1))
     const row = statTrackRow(t, detail.join(' · '))
-    row.classList.toggle('resting', !!t.resting_until)
+    if (t.resting_until) {
+      row.classList.add('resting')
+      const wake = makeEl('button', 'panel-link-btn row-btn', 'Wake')
+      wake.title = 'Bring it back into the mix now'
+      // Without stopPropagation this also plays the song.
+      wake.addEventListener('click', (e) => {
+        e.stopPropagation()
+        wake.disabled = true
+        WakeFavorite(t.uri).then(renderFavorites)
+      })
+      row.appendChild(wake)
+    }
     out.push(row)
   }
 

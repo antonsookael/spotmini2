@@ -334,3 +334,19 @@ func TestStartingANewBatchIsNotASkip(t *testing.T) {
 		t.Error("starting favorites again rested the song it replaced")
 	}
 }
+
+func TestWakingEndsARestAndItsHistory(t *testing.T) {
+	s := newTestService(t)
+	s.rest("spotify:track:a", t0)
+	s.rest("spotify:track:a", t0.Add(time.Hour))
+	s.Wake("spotify:track:a")
+
+	batch, _ := s.startFavorites(playback.RangeShort, ranking("spotify:track:a", "spotify:track:b"), t0.Add(2*time.Hour))
+	if !slices.Contains(batch, "spotify:track:a") {
+		t.Error("a woken song still sat out the batch")
+	}
+	s.rest("spotify:track:a", t0.Add(3*time.Hour))
+	if got := s.fav.Resting["spotify:track:a"].Until.Sub(t0.Add(3 * time.Hour)); got != baseRest {
+		t.Errorf("the next skip after waking rested it %v, want a fresh %v", got, baseRest)
+	}
+}

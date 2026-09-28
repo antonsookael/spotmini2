@@ -101,3 +101,8 @@ func (a *App) DropCurrentFavorite() (string, error) {
 func (a *App) UndropFavorite(uri string) {
 	a.stats.Undrop(uri)
 }
+
+// WakeFavorite ends a skipped song's rest early.
+func (a *App) WakeFavorite(uri string) {
+	a.stats.Wake(uri)
+}

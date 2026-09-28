@@ -337,6 +337,15 @@ func (s *Service) Undrop(uri string) {
 	s.saveFav()
 }
 
+// Wake ends a song's rest early and forgets the skips behind it, so the
+// next skip starts back at the shortest rest.
+func (s *Service) Wake(uri string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.fav.Resting, uri)
+	s.saveFav()
+}
+
 // rest sends a skipped song away for a while: baseRest for the first
 // skip, doubling for each further one within skipMemory.
 //

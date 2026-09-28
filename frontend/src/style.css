@@ -597,8 +597,22 @@ body {
   cursor: default;
 }
 
-.track-item.resting {
+/* Dimmed per part rather than on the row, so the Wake button on it
+   stays at full strength. */
+.track-item.resting .track-item-info,
+.track-item.resting .stat-detail {
   opacity: 0.5;
+}
+
+.row-btn {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+.row-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .range-switch {
