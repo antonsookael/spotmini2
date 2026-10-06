@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>spotmini</title>
-    <meta name="description" content="A tiny, always-on-top Spotify now-playing bar for macOS and Windows." />
+    <meta name="description" content="A tiny, always-on-top Spotify now-playing bar for macOS, Windows and Linux." />
     <link rel="icon" href="./icon.png" />
     <style>
       @font-face {
@@ -179,6 +179,7 @@
         text-decoration: underline;
       }
       .os-toggle:hover { color: var(--accent); }
+      .os-toggle + .os-toggle { margin-left: 14px; }
 
       .note { color: var(--muted); font-size: 12px; margin-top: 8px; }
 
@@ -288,7 +289,25 @@
           <p class="note">Defender may also flag it as a false positive; if so, allow it under Virus &amp; threat protection → Protection history.</p>
         </div>
 
-        <button class="os-toggle" id="toggle"></button>
+        <div class="os-block" id="linux">
+          <p>It's a single binary that uses the system's WebKitGTK, so that has to be there first:</p>
+          <ol>
+            <li>Install WebKitGTK 4.1 if you don't have it. On Arch:
+              <code>sudo pacman -S webkit2gtk-4.1</code>
+              Debian or Ubuntu:
+              <code>sudo apt install libwebkit2gtk-4.1-0</code>
+              Fedora:
+              <code>sudo dnf install webkit2gtk4.1</code>
+            </li>
+            <li>Unpack the download where you saved it, and run it:
+              <code>tar -xzf <span id="linux-file">spotmini-*linux.tar.gz</span> &amp;&amp; ./spotmini</code>
+            </li>
+          </ol>
+          <p class="note">On Wayland it runs through XWayland — a native Wayland window can't place itself or stay on top. Whether the hotkeys reach it while another app has focus is up to the desktop; KDE Plasma 6 allows it out of the box.</p>
+        </div>
+
+        <!-- One button per platform that isn't showing; filled in below. -->
+        <div id="toggles"></div>
       </section>
 
       <section>
@@ -318,21 +337,48 @@
 
     <script>
       const REPO = 'antonsookael/spotmini2'
-      const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
+      const RELEASES_URL = `https://github.com/${REPO}/releases/latest`
 
-      const macBlock = document.getElementById('mac')
-      const winBlock = document.getElementById('win')
-      const toggle = document.getElementById('toggle')
+      // Each platform's name as shown, and what its release asset's
+      // filename ends in. The keys double as the ids of the setup blocks.
+      const PLATFORMS = {
+        mac: { label: 'macOS', suffix: 'mac.zip' },
+        win: { label: 'Windows', suffix: 'win.exe' },
+        linux: { label: 'Linux', suffix: 'linux.tar.gz' },
+      }
+
+      // Android calls itself Linux too. There's no build for it, so it's
+      // left to fall through to the default with everything else unknown.
+      function detectOS() {
+        const platform = navigator.platform || navigator.userAgent
+        if (/Mac|iPhone|iPad/.test(platform)) return 'mac'
+        if (/Linux|X11/.test(platform) && !/Android/.test(navigator.userAgent)) return 'linux'
+        return 'win'
+      }
+
+      const toggles = document.getElementById('toggles')
 
       // Filled in by the release lookup below. Until then - or if it
       // fails - the button keeps its static link to the releases page.
-      const assets = { mac: null, win: null }
+      const assets = { mac: null, win: null, linux: null }
 
-      let showingMac = isMac
+      let showing = detectOS()
+      const others = () => Object.keys(PLATFORMS).filter((os) => os !== showing)
+
       function applyOS() {
-        macBlock.classList.toggle('show', showingMac)
-        winBlock.classList.toggle('show', !showingMac)
-        toggle.textContent = showingMac ? 'Using Windows?' : 'Using macOS?'
+        for (const os of Object.keys(PLATFORMS)) {
+          document.getElementById(os).classList.toggle('show', os === showing)
+        }
+
+        toggles.innerHTML = ''
+        for (const os of others()) {
+          const button = document.createElement('button')
+          button.className = 'os-toggle'
+          button.textContent = `Using ${PLATFORMS[os].label}?`
+          button.addEventListener('click', () => { showing = os; applyOS() })
+          toggles.appendChild(button)
+        }
+
         applyDownloads()
       }
 
@@ -342,20 +388,22 @@
       // change - so it offered a .zip for macOS underneath a set of
       // Windows steps.
       function applyDownloads() {
-        const mine = showingMac ? assets.mac : assets.win
-        const other = showingMac ? assets.win : assets.mac
+        const btn = document.getElementById('download')
+        const mine = assets[showing]
 
-        if (mine) {
-          const btn = document.getElementById('download')
-          btn.href = mine.browser_download_url
-          btn.textContent = `Download for ${showingMac ? 'macOS' : 'Windows'}`
-        }
-        document.getElementById('alt').innerHTML = other
-          ? `<a href="${other.browser_download_url}">Download for ${showingMac ? 'Windows' : 'macOS'}</a>`
-          : ''
+        // Back to the plain releases link when there's no file to point
+        // at - the lookup failed, or the latest release predates this
+        // platform - rather than leaving the last platform's download
+        // behind the button.
+        btn.href = mine ? mine.browser_download_url : RELEASES_URL
+        btn.textContent = mine ? `Download for ${PLATFORMS[showing].label}` : 'Download'
+
+        document.getElementById('alt').innerHTML = others()
+          .filter((os) => assets[os])
+          .map((os) => `<a href="${assets[os].browser_download_url}">Download for ${PLATFORMS[os].label}</a>`)
+          .join(' · ')
       }
 
-      toggle.addEventListener('click', () => { showingMac = !showingMac; applyOS() })
       applyOS()
 
       // Asset names carry the version (spotmini-v1.8mac.zip), so there's
@@ -365,14 +413,19 @@
       fetch(`https://api.github.com/repos/${REPO}/releases/latest`)
         .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
         .then((release) => {
-          const find = (suffix) =>
-            (release.assets || []).find((a) => a.name.endsWith(suffix))
-          assets.mac = find('mac.zip')
-          assets.win = find('win.exe')
+          for (const [os, { suffix }] of Object.entries(PLATFORMS)) {
+            assets[os] = (release.assets || []).find((a) => a.name.endsWith(suffix)) || null
+          }
 
           // Same function the toggle calls, so the links are built one
           // way whether they're being set up or switched over.
           applyDownloads()
+
+          // The unpack command names the real file once it's known, so
+          // it can be pasted as it stands.
+          if (assets.linux) {
+            document.getElementById('linux-file').textContent = assets.linux.name
+          }
 
           if (release.tag_name) {
             document.getElementById('version').textContent = release.tag_name
