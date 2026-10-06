@@ -18,7 +18,7 @@ A tiny, frameless, always-on-top Spotify now-playing strip built with Go and Wai
 
 ## Default hotkeys
 
-All use Ctrl+Alt on Windows and Ctrl+Option on macOS:
+All use Ctrl+Alt on Windows and Linux, and Ctrl+Option on macOS:
 
 | Action          | Key   |
 | --------------- | ----- |
@@ -37,7 +37,7 @@ Rebinding these to different keys is currently WIP - the backend supports it, bu
 
 ## Download
 
-Grab the latest build for your OS from [Releases](../../releases) - `spotmini-vX.Y.Zwin.exe` for Windows, `spotmini-vX.Y.Zmac.zip` for macOS.
+Grab the latest build for your OS from [Releases](../../releases) - `spotmini-vX.Y.Zwin.exe` for Windows, `spotmini-vX.Y.Zmac.zip` for macOS, `spotmini-vX.Y.Zlinux.tar.gz` for Linux.
 
 Login uses OAuth Authorization Code with PKCE, so there's no client secret involved at all - only a public Client ID (baked into the build) and a one-time proof value generated fresh on your machine for each login.
 
@@ -64,12 +64,32 @@ The build is neither code-signed with a paid Apple Developer ID nor notarized, s
 
 Because the build is unsigned, macOS ties both the quarantine flag and the Accessibility grant to that exact binary - you'll need to repeat steps 2 and 4 for every new release you download, since each one is a different build.
 
+### Linux
+
+The build is a single x86-64 binary that uses the system's GTK 3 and WebKitGTK, so those need to be installed:
+
+- Arch: `sudo pacman -S webkit2gtk-4.1`
+- Debian/Ubuntu: `sudo apt install libwebkit2gtk-4.1-0`
+- Fedora: `sudo dnf install webkit2gtk4.1`
+
+Then unpack and run it:
+
+```
+tar -xzf spotmini-vX.Y.Zlinux.tar.gz
+./spotmini
+```
+
+On a Wayland session the app runs through XWayland rather than as a native Wayland window, so XWayland has to be available (it is by default on the major desktops). That's deliberate: Wayland doesn't let a window position itself or stay on top, which is most of what spotmini does. Set `GDK_BACKEND` yourself to override it.
+
+The global hotkeys are X11 key grabs. On an X11 session they work everywhere. On Wayland it's up to the desktop whether key presses typed in other apps are passed on to X11 ones: KDE Plasma 6 does this by default for combinations with Ctrl or Alt held, which covers all of the defaults (the setting is on the *Legacy X11 App Support* page in System Settings). On a desktop that doesn't, the hotkeys only fire while spotmini or another X11 app has focus.
+
 ## Where your data is stored
 
 The saved login token, hotkey bindings, and a diagnostic log live in a per-user app-data folder, not next to the executable. This folder name is deliberately unchanged from the app's old `spotmini-gui` name, so upgrading doesn't lose your saved login:
 
 - macOS: `~/Library/Application Support/spotmini-gui/`
 - Windows: `%AppData%\spotmini-gui\`
+- Linux: `~/.config/spotmini-gui/`
 
 ## Developing
 
@@ -98,9 +118,11 @@ On first run, a browser window opens for Spotify login. After that, a saved toke
 wails build
 ```
 
+On Linux, add `-tags webkit2_41` to both `wails dev` and `wails build` - Wails otherwise looks for the older WebKitGTK 4.0, which current distros no longer ship. Building needs the GTK 3, WebKitGTK 4.1 and X11 development packages (`webkit2gtk-4.1` on Arch; `libgtk-3-dev libwebkit2gtk-4.1-dev libx11-dev` on Debian/Ubuntu).
+
 On macOS this defaults to an Intel-only (`darwin/amd64`) binary - pass `-platform darwin/universal` to build one that runs on both Intel and Apple Silicon without Rosetta.
 
-A tagged push (`git tag vX.Y.Z && git push origin vX.Y.Z`) triggers a GitHub Actions workflow that builds both a Windows and a macOS (universal) binary and attaches them to a new Release automatically.
+A tagged push (`git tag vX.Y.Z && git push origin vX.Y.Z`) triggers a GitHub Actions workflow that builds Windows, macOS (universal) and Linux binaries and attaches them to a new Release automatically.
 
 ## Tech
 
