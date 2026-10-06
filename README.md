@@ -8,8 +8,10 @@ A tiny, frameless, always-on-top Spotify now-playing strip built with Go and Wai
 - Shows current song, artist, and live progress
 - Play/pause, next/previous, shuffle, and loop (repeat off/playlist/track) controls
 - Volume up/down with a brief on-screen indicator
-- Playlist picker with instant search over your own playlists
+- Playlist picker with instant search over your own playlists and Liked Songs, plus song search
 - Global hotkeys for every control above, so it all works even when the window isn't focused
+- Favorites mode: a mix of your most-played songs, weighted towards what you've played lately - a song you skip sits out for a while, and one you drop stays out
+- Listening stats: play counts, listening time, your most-played songs and artists, and Spotify's own top lists next to them
 - Customizable accent color and background (solid or gradient)
 - Auto-fit window width, so long song/artist names aren't clipped
 - Edge snapping when dragging the window near a screen edge
@@ -85,7 +87,7 @@ The global hotkeys are X11 key grabs. On an X11 session they work everywhere. On
 
 ## Where your data is stored
 
-The saved login token, hotkey bindings, and a diagnostic log live in a per-user app-data folder, not next to the executable. This folder name is deliberately unchanged from the app's old `spotmini-gui` name, so upgrading doesn't lose your saved login:
+The saved login token, hotkey bindings, window position, a diagnostic log, and the play log that favorites mode and the stats are built from all live in a per-user app-data folder, not next to the executable. The play log is only kept there - spotmini doesn't send it anywhere. This folder name is deliberately unchanged from the app's old `spotmini-gui` name, so upgrading doesn't lose your saved login:
 
 - macOS: `~/Library/Application Support/spotmini-gui/`
 - Windows: `%AppData%\spotmini-gui\`
@@ -132,4 +134,4 @@ A tagged push (`git tag vX.Y.Z && git push origin vX.Y.Z`) triggers a GitHub Act
 
 ## Status
 
-Actively in progress. Playback controls, volume, and global hotkeys are all working; a UI for rebinding hotkeys exists in the code but is currently hidden pending more testing. Code signing/notarization is intentionally skipped for now (see the macOS setup steps above for the workaround this requires). Playlist selection is still planned.
+Actively in progress. Playback controls, volume, and global hotkeys are all working; a UI for rebinding hotkeys exists in the code but is currently hidden pending more testing. Code signing/notarization is intentionally skipped for now (see the macOS setup steps above for the workaround this requires).
