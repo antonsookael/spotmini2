@@ -14,8 +14,17 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+// Linux has no executable icon resource for the desktop to read, so the
+// window is handed its icon at runtime instead. A 256px copy of
+// build/appicon.png rather than the original: at 1024px the icon is too
+// big for the X11 property the taskbar reads it from, and GTK silently
+// leaves it unset.
+//
+//go:embed build/linux/icon.png
+var icon []byte
+
 func main() {
-	if err := app.Run(assets); err != nil {
+	if err := app.Run(assets, icon); err != nil {
 		// Via logging rather than println: a built app has no console
 		// attached, so the one message explaining why the window never
 		// appeared would otherwise go nowhere.

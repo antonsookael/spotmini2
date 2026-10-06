@@ -12,8 +12,8 @@ import (
 const appDirName = "spotmini-gui"
 
 // ConfigFile returns the path to name inside the per-user config dir
-// (~/Library/Application Support/spotmini-gui, %AppData% on Windows),
-// creating it if needed.
+// (~/Library/Application Support/spotmini-gui, %AppData% on Windows,
+// ~/.config on Linux), creating it if needed.
 func ConfigFile(name string) (string, error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"golang.design/x/hotkey"
 
 	"spotmini-gui/internal/hotkeys"
@@ -188,5 +189,14 @@ func (a *App) shutdown(ctx context.Context) {
 // needs to see a real window belongs here rather than in startup, which
 // Wails runs before there is one.
 func (a *App) domReady(ctx context.Context) {
+	if nativeStartHidden {
+		prepareNativeWindow(windowWidth, collapsedHeight)
+		runtime.WindowShow(a.ctx)
+		// Restored again here, not just in startup, and only once the
+		// window is showing: Wails centres it as the event loop starts,
+		// and the window manager picks its own spot for a window as it
+		// first appears - either would otherwise have the last word.
+		a.restoreWindowPosition()
+	}
 	a.ensureOnScreen()
 }

@@ -834,10 +834,10 @@ alwaysOnTopToggle.addEventListener('change', (e) => {
 
 // --- Customization: start on startup ---
 // Source of truth is the OS itself (registry key on Windows, LaunchAgent
-// on macOS), not localStorage - it can be changed outside the app
-// (Task Manager's Startup tab, deleting the LaunchAgent by hand), so
-// the checkbox reflects whatever's actually there rather than a cached
-// guess.
+// on macOS, autostart entry on Linux), not localStorage - it can be
+// changed outside the app (Task Manager's Startup tab, deleting the
+// LaunchAgent by hand), so the checkbox reflects whatever's actually
+// there rather than a cached guess.
 const autostartToggle = document.getElementById('autostart-toggle')
 
 IsAutostartEnabled().then((enabled) => {

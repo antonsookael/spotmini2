@@ -21,7 +21,10 @@ type windowPosition struct {
 // Called on shutdown, not per move - dragging is frame by frame, which
 // would mean hundreds of writes per drag.
 func (a *App) saveWindowPosition() {
-	x, y := runtime.WindowGetPosition(a.ctx)
+	x, y, ok := a.positionAtShutdown()
+	if !ok {
+		return
+	}
 
 	data, err := json.MarshalIndent(windowPosition{X: x, Y: y}, "", "  ")
 	if err != nil {
@@ -32,6 +35,22 @@ func (a *App) saveWindowPosition() {
 		return
 	}
 	os.WriteFile(path, data, 0644)
+}
+
+// positionAtShutdown returns where the window was as the app closed, and
+// false if that isn't known.
+//
+// Everywhere but Linux it can simply be asked. There, Wails destroys the
+// window before OnShutdown runs, and a window that no longer exists
+// answers (0, 0) - which was then saved, so every launch after the first
+// opened in the top-left corner of the leftmost screen. The position is
+// followed as it changes instead, and read back from that.
+func (a *App) positionAtShutdown() (x, y int, ok bool) {
+	if windowGoneAtShutdown {
+		return lastWindowPositionNative()
+	}
+	x, y = runtime.WindowGetPosition(a.ctx)
+	return x, y, true
 }
 
 // restoreWindowPosition returns the window to its last spot, then
@@ -56,7 +75,7 @@ func (a *App) restoreWindowPosition() {
 	// A saved position can point somewhere that no longer exists - a
 	// monitor that's since been unplugged, or a rearranged desktop -
 	// which would restore the window off-screen with no way to reach it.
-	width, height := runtime.WindowGetSize(a.ctx)
+	width, height := a.windowSize()
 	x, y := clampToScreen(pos.X, pos.Y, width, height)
 
 	a.setAbsoluteWindowPosition(x, y)
@@ -76,7 +95,7 @@ func (a *App) restoreWindowPosition() {
 // without deleting window.json by hand.
 func (a *App) ensureOnScreen() {
 	x, y := runtime.WindowGetPosition(a.ctx)
-	width, height := runtime.WindowGetSize(a.ctx)
+	width, height := a.windowSize()
 
 	clampedX, clampedY := clampToScreen(x, y, width, height)
 	if clampedX == x && clampedY == y {

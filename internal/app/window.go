@@ -66,7 +66,7 @@ func clampToScreen(x, y, width, height int) (int, int) {
 // knows where the current monitor actually ends - on a multi-monitor
 // desktop the browser has no idea.
 func (a *App) SetWindowWidth(width int) {
-	oldWidth, height := runtime.WindowGetSize(a.ctx)
+	oldWidth, height := a.windowSize()
 	if oldWidth == width {
 		return
 	}
@@ -76,7 +76,7 @@ func (a *App) SetWindowWidth(width int) {
 	// inside the window's current monitor.
 	centerX, centerY := x+oldWidth/2, y+height/2
 
-	runtime.WindowSetSize(a.ctx, width, height)
+	a.setWindowSize(width, height)
 
 	left, _, right, _, ok := monitorBoundsAt(centerX, centerY)
 	if !ok {
@@ -97,17 +97,44 @@ func (a *App) SetWindowWidth(width int) {
 	}
 }
 
+// windowSize returns the window's current size - on Linux the one last
+// asked for, since a resize there doesn't land straight away (see
+// requestedSize in screen_linux.go).
+func (a *App) windowSize() (width, height int) {
+	if width, height, ok := windowSizeNative(); ok {
+		return width, height
+	}
+	return runtime.WindowGetSize(a.ctx)
+}
+
+// setWindowSize resizes the window, natively where Wails' own resize
+// can't be relied on (see resizeWindowNative in screen_linux.go).
+func (a *App) setWindowSize(width, height int) {
+	if resizeWindowNative(width, height) {
+		return
+	}
+	runtime.WindowSetSize(a.ctx, width, height)
+}
+
+// focusWindow brings the window forward and gives it keyboard focus.
+func (a *App) focusWindow() {
+	if focusWindowNative() {
+		return
+	}
+	runtime.WindowShow(a.ctx)
+}
+
 // setAbsoluteWindowPosition moves the window to an absolute desktop
-// coordinate. Windows needs its own move call (see moveWindowNative),
-// with work-area compensation as the fallback if that can't find the
-// window; elsewhere it's a passthrough.
+// coordinate. Windows and Linux need their own move call (see
+// moveWindowNative), with work-area compensation as the fallback if
+// that can't find the window; elsewhere it's a passthrough.
 func (a *App) setAbsoluteWindowPosition(x, y int) {
 	if moveWindowNative(x, y) {
 		return
 	}
 
 	curX, curY := runtime.WindowGetPosition(a.ctx)
-	width, height := runtime.WindowGetSize(a.ctx)
+	width, height := a.windowSize()
 
 	originX, originY, ok := workAreaOriginAt(curX+width/2, curY+height/2)
 	if !ok {
@@ -122,7 +149,7 @@ func (a *App) setAbsoluteWindowPosition(x, y int) {
 // which made dragging visibly laggy.
 func (a *App) BeginDrag() {
 	x, y := runtime.WindowGetPosition(a.ctx)
-	width, height := runtime.WindowGetSize(a.ctx)
+	width, height := a.windowSize()
 	_, _, needsCompensation := workAreaOriginAt(x+width/2, y+height/2)
 
 	a.dragMu.Lock()
@@ -205,15 +232,16 @@ func (a *App) currentScreen() (runtime.Screen, bool) {
 // bottom of the screen or flipped it upward with room to spare.
 func (a *App) currentScreenBounds() (top, bottom int, ok bool) {
 	x, y := runtime.WindowGetPosition(a.ctx)
-	width, height := runtime.WindowGetSize(a.ctx)
+	width, height := a.windowSize()
 
 	if _, monTop, _, monBottom, found := monitorBoundsAt(x+width/2, y+height/2); found {
 		return monTop, monBottom, true
 	}
 
-	// No native bounds available (Linux, or the lookup failed). Falling
-	// back to Wails' screen size assumes the display sits at the desktop
-	// origin - the same assumption every other fallback here makes.
+	// No native bounds available (the lookup failed, or a platform
+	// without one). Falling back to Wails' screen size assumes the
+	// display sits at the desktop origin - the same assumption every
+	// other fallback here makes.
 	screen, found := a.currentScreen()
 	if !found {
 		return 0, 0, false
@@ -249,7 +277,7 @@ func withinSnap(gap int) bool {
 // snapToEdges moves the window flush against any screen edge it's
 // within snapThreshold pixels of.
 func (a *App) snapToEdges(x, y int) {
-	width, height := runtime.WindowGetSize(a.ctx)
+	width, height := a.windowSize()
 
 	// Prefer the real bounds of the monitor the window is on. Falling
 	// back to Wails' screen size assumes a desktop origin, so it's only

@@ -107,7 +107,7 @@ func (a *App) togglePanel(panel string) {
 
 	// Reuse the current width rather than hardcoding windowWidth, which
 	// would stomp whatever auto-fit set (see updateAutoWidth in main.js).
-	width, currentHeight := runtime.WindowGetSize(a.ctx)
+	width, currentHeight := a.windowSize()
 
 	if a.expandedPanel != "" {
 		if !wasExpanded {
@@ -120,14 +120,14 @@ func (a *App) togglePanel(panel string) {
 			} else {
 				a.openedUpward = false
 			}
-			runtime.WindowSetSize(a.ctx, width, defaultExpandedHeight)
+			a.setWindowSize(width, defaultExpandedHeight)
 		}
 		if panel == "playlists" {
 			// The hotkey can fire while another app is focused, and
 			// AlwaysOnTop only affects z-order - without this the
 			// window shows but never takes keyboard focus, so the
 			// search input's .focus() does nothing.
-			runtime.WindowShow(a.ctx)
+			a.focusWindow()
 		}
 	} else {
 		// Measured rather than derived from a constant: the height is
@@ -135,7 +135,7 @@ func (a *App) togglePanel(panel string) {
 		// would put the window back in the wrong place.
 		delta := currentHeight - collapsedHeight
 
-		runtime.WindowSetSize(a.ctx, width, collapsedHeight)
+		a.setWindowSize(width, collapsedHeight)
 		if a.openedUpward {
 			x, y := runtime.WindowGetPosition(a.ctx)
 			a.setAbsoluteWindowPosition(x, y+delta)
@@ -169,7 +169,7 @@ func (a *App) SetPanelHeight(contentHeight int) {
 		target = bottom - top
 	}
 
-	width, current := runtime.WindowGetSize(a.ctx)
+	width, current := a.windowSize()
 	if current == target {
 		return
 	}
@@ -181,5 +181,5 @@ func (a *App) SetPanelHeight(contentHeight int) {
 		x, y := runtime.WindowGetPosition(a.ctx)
 		a.setAbsoluteWindowPosition(x, y-(target-current))
 	}
-	runtime.WindowSetSize(a.ctx, width, target)
+	a.setWindowSize(width, target)
 }
