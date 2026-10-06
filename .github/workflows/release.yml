@@ -13,6 +13,15 @@ on:
       tag:
         description: "Existing tag to build and release (e.g. v1.8)"
         required: true
+      # Unticked, a run stops short of the release: every platform is
+      # built and packaged from whatever ref was typed in above - a
+      # branch works as well as a tag - and nothing is published. It's
+      # the one way to find out a platform no longer builds before a tag
+      # makes that public.
+      publish:
+        description: "Publish the builds as a release (untick to only check that every platform still builds)"
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -58,6 +67,8 @@ jobs:
           cp build/bin/spotmini.exe "dist/spotmini-${{ env.VERSION }}win.exe"
 
       - name: Publish release
+        # Always on a tag push; on a manual run, only if asked to.
+        if: github.event_name == 'push' || inputs.publish
         uses: softprops/action-gh-release@v2
         with:
           # Without this the action infers the tag from the ref, which is
@@ -101,8 +112,55 @@ jobs:
           ditto -c -k --sequesterRsrc --keepParent build/bin/spotmini.app "dist/spotmini-${{ env.VERSION }}mac.zip"
 
       - name: Publish release
+        # Always on a tag push; on a manual run, only if asked to.
+        if: github.event_name == 'push' || inputs.publish
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.VERSION }}
           files: dist/*.zip
+          generate_release_notes: true
+
+  build-linux:
+    # The oldest runner still on offer rather than ubuntu-latest: the
+    # binary links against the glibc it was built with, and one built on
+    # a newer release refuses to start on anything older.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.VERSION }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libx11-dev
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Build
+        # webkit2_41 points Wails at WebKitGTK 4.1 - without it, it
+        # looks for 4.0, which current distros have dropped.
+        run: wails build -tags webkit2_41 -ldflags "-X spotmini-gui/internal/app.Version=${{ env.VERSION }}"
+
+      - name: Package binary
+        run: |
+          mkdir -p dist
+          tar -czf "dist/spotmini-${{ env.VERSION }}linux.tar.gz" -C build/bin spotmini
+
+      - name: Publish release
+        # Always on a tag push; on a manual run, only if asked to.
+        if: github.event_name == 'push' || inputs.publish
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.VERSION }}
+          files: dist/*.tar.gz
           generate_release_notes: true
