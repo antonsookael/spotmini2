@@ -36,20 +36,17 @@ func (a *App) PlayPlaylist(uri string) {
 	})
 }
 
-// PlayLikedSongs plays the most recently saved tracks. Liked Songs has
-// no playlist URI, so it plays explicit track URIs instead.
+// PlayLikedSongs plays the user's Liked Songs from the newest. The
+// library's context is addressed by user ID, so that's looked up first.
 func (a *App) PlayLikedSongs() {
-	uris, err := retryOnAuthFailure(a, playback.GetLikedSongURIs)
+	userID, err := retryOnAuthFailure(a, playback.GetUserID)
 	if err != nil {
-		logging.Printf("Failed to fetch liked songs: %v", err)
+		logging.Printf("Failed to look up the user id for liked songs: %v", err)
 		a.reportCommandFailure("playLikedSongs", err)
 		return
 	}
-	if len(uris) == 0 {
-		return
-	}
 	a.withTrackChange("playLikedSongs", func(token string) error {
-		return playback.PlayURIs(token, uris)
+		return playback.PlayLikedSongs(token, userID)
 	})
 }
 
@@ -73,10 +70,25 @@ func (a *App) SearchTracks(query string) ([]playback.TrackResult, error) {
 }
 
 // PlayTrack starts playback of a single track by URI - used when
-// picking a song from search results.
+// picking a song from search results or the stats.
+//
+// Played from inside its album so it starts straight away; Spotify no
+// longer acts on a bare list of track URIs, and the queue PlayURIs
+// falls back on would put the pick behind anything queued already. The
+// queue is still the fallback when the album can't be looked up - late
+// is better than never.
 func (a *App) PlayTrack(uri string) {
+	album, err := retryOnAuthFailure(a, func(token string) (string, error) {
+		return playback.TrackAlbumURI(token, uri)
+	})
+	if err != nil {
+		logging.Printf("Could not find the album of %s, queueing it instead: %v", uri, err)
+	}
 	a.withTrackChange("playTrack", func(token string) error {
-		return playback.PlayURIs(token, []string{uri})
+		if album == "" {
+			return playback.PlayURIs(token, []string{uri})
+		}
+		return playback.PlayInContext(token, album, uri)
 	})
 }
 
