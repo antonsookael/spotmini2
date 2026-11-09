@@ -61,6 +61,11 @@ body {
   opacity: 1;
 }
 
+/* Popup mode (Linux, see main.js): no strip, the window is the open panel. */
+body.popup #now-playing {
+  display: none;
+}
+
 #now-playing {
   width: 100%;
   height: 50px;

@@ -1,5 +1,6 @@
 import { EventsOn, Environment, WindowGetPosition, WindowSetAlwaysOnTop, BrowserOpenURL, Quit } from '../wailsjs/runtime/runtime'
 import {
+  GetDesktopTheme,
   GetNowPlaying,
   GetHotkeyConfig,
   SetHotkeyBinding,
@@ -125,13 +126,49 @@ function measureNeededBarWidth() {
   return needed
 }
 
+// --- Popup mode (Linux) ---
+// On Linux this window isn't the strip: the desktop (Touch Bar, top bar)
+// shows what's playing over spotmini's socket, and the window only
+// appears as a popup under the top bar while a panel is open. Its colours
+// then come from the desktop's theme (GetDesktopTheme, written by the
+// rice), applied over whatever the theme settings say.
+let popupMode = false
+let currentPanel = ''
+
+function applyDesktopTheme(theme) {
+  if (!popupMode || !theme || !theme.available) return
+  root.style.setProperty('--bg', theme.base)
+  root.style.setProperty('--fg', theme.text)
+  root.style.setProperty('--accent-color', theme.accent)
+}
+
+// closeOpenPanel puts the popup away, whichever panel it is showing.
+// Toggling the open panel is what closes it (see togglePanel in Go);
+// the settings toggle also covers the pages reached from settings.
+function closeOpenPanel() {
+  if (currentPanel === 'playlists') TogglePlaylistsPanel()
+  else if (currentPanel === 'favorites') ToggleFavoritesPanel()
+  else if (currentPanel) ToggleSettingsPanel()
+}
+
+Environment().then((env) => {
+  if (env.platform !== 'linux') return
+  popupMode = true
+  document.body.classList.add('popup')
+  GetDesktopTheme().then(applyDesktopTheme)
+  EventsOn('desktop-theme-changed', applyDesktopTheme)
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeOpenPanel()
+  })
+})
+
 // Both go through Go's SetWindowWidth rather than the Wails runtime's
 // WindowSetSize: resizing anchors the top-left and grows rightward, so
 // widening near a screen edge needs the monitor bounds to stay
 // on-screen, and only Go can see those. It also no-ops when the width
 // is already right, so there's no need to check here.
 function updateAutoWidth() {
-  if (!autoFitToggle.checked) return
+  if (popupMode || !autoFitToggle.checked) return
   SetWindowWidth(Math.min(MAX_WIDTH, Math.max(AUTOFIT_MIN_WIDTH, measureNeededBarWidth() + 8)))
 }
 
@@ -559,6 +596,7 @@ EventsOn('no-device', () => {
 
 // Fired whenever a panel is toggled, by button or hotkey.
 EventsOn('panel-changed', (panel) => {
+  currentPanel = panel
   document.getElementById('settings-panel').classList.toggle('hidden', panel !== 'settings')
   document.getElementById('playlists-panel').classList.toggle('hidden', panel !== 'playlists')
   document.getElementById('hotkeys-panel').classList.toggle('hidden', panel !== 'hotkeys')

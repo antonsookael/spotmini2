@@ -94,6 +94,11 @@ func (a *App) ToggleAlwaysOnTop() {
 // frontend corrects it once it has measured the panel that's now
 // visible.
 func (a *App) togglePanel(panel string) {
+	if popupMode {
+		a.togglePopupPanel(panel)
+		return
+	}
+
 	a.panelMu.Lock()
 	defer a.panelMu.Unlock()
 
@@ -161,7 +166,13 @@ func (a *App) SetPanelHeight(contentHeight int) {
 		return
 	}
 
-	target := collapsedHeight + contentHeight
+	// In popup mode there is no bar above the panel, so the panel is the
+	// whole window.
+	base := collapsedHeight
+	if popupMode {
+		base = 0
+	}
+	target := base + contentHeight
 	// Clamped against the monitor's height, not its bottom edge - target
 	// is a window size, and those are only the same number on a display
 	// whose top edge sits at 0.

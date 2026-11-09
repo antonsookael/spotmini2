@@ -66,6 +66,11 @@ func clampToScreen(x, y, width, height int) (int, int) {
 // knows where the current monitor actually ends - on a multi-monitor
 // desktop the browser has no idea.
 func (a *App) SetWindowWidth(width int) {
+	// A popup is as wide as the desktop says, never as wide as the bar's
+	// text - and the frontend doesn't ask in popup mode anyway.
+	if popupMode {
+		return
+	}
 	oldWidth, height := a.windowSize()
 	if oldWidth == width {
 		return

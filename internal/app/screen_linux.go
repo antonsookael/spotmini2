@@ -7,7 +7,7 @@ package app
 #include <gtk/gtk.h>
 #include <gdk/gdkx.h>
 
-enum { OP_MONITOR_AT, OP_PREPARE, OP_RESIZE, OP_MOVE, OP_FOCUS };
+enum { OP_MONITOR_AT, OP_POINTER, OP_PREPARE, OP_RESIZE, OP_MOVE, OP_FOCUS };
 
 // One request to the GTK main thread: what to do, its two integer
 // arguments, and room for the answer.
@@ -15,6 +15,7 @@ typedef struct {
 	int kind;
 	int a, b;
 	int left, top, right, bottom;
+	int scale;
 	int ok;
 	int done;
 	GMutex mu;
@@ -110,6 +111,21 @@ static void runOp(NativeOp *op) {
 		op->top = r.y;
 		op->right = r.x + r.width;
 		op->bottom = r.y + r.height;
+		op->scale = gdk_monitor_get_scale_factor(monitor);
+		op->ok = 1;
+		return;
+	}
+	if (op->kind == OP_POINTER) {
+		GdkDisplay *display = gdk_display_get_default();
+		GdkSeat *seat = display ? gdk_display_get_default_seat(display) : NULL;
+		GdkDevice *pointer = seat ? gdk_seat_get_pointer(seat) : NULL;
+		if (pointer == NULL) {
+			return;
+		}
+		int x, y;
+		gdk_device_get_position(pointer, NULL, &x, &y);
+		op->left = x;
+		op->top = y;
 		op->ok = 1;
 		return;
 	}
@@ -307,12 +323,30 @@ func focusWindowNative() bool {
 // (x, y), in the same GDK coordinate space Wails' WindowGetPosition and
 // WindowSetPosition use on Linux.
 func monitorBoundsAt(x, y int) (left, top, right, bottom int, ok bool) {
+	left, top, right, bottom, _, ok = monitorAt(x, y)
+	return
+}
+
+// monitorAt is monitorBoundsAt plus the monitor's GDK scale factor: how
+// many device pixels one of these coordinates is.
+func monitorAt(x, y int) (left, top, right, bottom, scale int, ok bool) {
 	op := C.NativeOp{kind: C.OP_MONITOR_AT, a: C.int(x), b: C.int(y)}
 	C.runOnMain(&op)
 	if op.ok == 0 {
-		return 0, 0, 0, 0, false
+		return 0, 0, 0, 0, 0, false
 	}
-	return int(op.left), int(op.top), int(op.right), int(op.bottom), true
+	return int(op.left), int(op.top), int(op.right), int(op.bottom), int(op.scale), true
+}
+
+// pointerPositionNative is where the mouse pointer is, in the same GDK
+// coordinate space as the rest, for finding the monitor the user is on.
+func pointerPositionNative() (x, y int, ok bool) {
+	op := C.NativeOp{kind: C.OP_POINTER}
+	C.runOnMain(&op)
+	if op.ok == 0 {
+		return 0, 0, false
+	}
+	return int(op.left), int(op.top), true
 }
 
 // workAreaOriginAt returns the origin of whichever monitor contains

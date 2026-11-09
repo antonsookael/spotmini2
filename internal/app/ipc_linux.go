@@ -248,17 +248,19 @@ func ipcArtist(item playback.Track) string {
 	return ""
 }
 
-// ipcSend writes one message. A client that can't be written to is
-// closed; ipcServe's read then fails and takes it out of the set.
+// ipcSend writes one message. A failed write is left alone: the
+// connection belongs to ipcServe, whose read fails too when the client
+// is really gone and takes it out of the set. Closing it here instead
+// lost commands - a client that sends one and hangs up straight away
+// makes the welcome state's write fail, and closing on that threw its
+// command away unread.
 func ipcSend(conn net.Conn, msg ipcState) {
 	data, err := json.Marshal(msg)
 	if err != nil {
 		return
 	}
 	conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
-	if _, err := conn.Write(append(data, '\n')); err != nil {
-		conn.Close()
-	}
+	conn.Write(append(data, '\n'))
 }
 
 // ipcKeepFresh reads Spotify itself when the frontend's reads have

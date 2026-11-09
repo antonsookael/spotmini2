@@ -114,6 +114,11 @@ type App struct {
 	// The desktop's way in on Linux; nil elsewhere and when the socket
 	// couldn't be opened. See ipc_linux.go.
 	ipc *ipcServer
+
+	// The desktop's colours and popup placement, in popup mode. See
+	// popup.go.
+	desktopThemeMu sync.Mutex
+	desktopTheme   DesktopTheme
 }
 
 // New returns an App ready to be handed to Wails. Everything that needs
@@ -130,7 +135,11 @@ func (a *App) startup(ctx context.Context) {
 	// Before anything can read playback: every read is fed to it.
 	a.stats = stats.Open()
 
-	a.restoreWindowPosition()
+	// A popup is placed afresh every time it opens; there's no strip
+	// position to bring back.
+	if !popupMode {
+		a.restoreWindowPosition()
+	}
 
 	// Before the sign-in: a bar connecting early is told "signing in"
 	// by the first read instead of finding no socket.
@@ -198,6 +207,14 @@ func (a *App) shutdown(ctx context.Context) {
 // needs to see a real window belongs here rather than in startup, which
 // Wails runs before there is one.
 func (a *App) domReady(ctx context.Context) {
+	if popupMode {
+		// Stays hidden: togglePopupPanel shows it when a panel opens.
+		// Prepared now all the same, while it is still unmapped, so it
+		// comes up as a utility window at a sane size the first time.
+		prepareNativeWindow(popupDefaultWidth, defaultExpandedHeight-collapsedHeight)
+		a.startDesktopThemeWatch()
+		return
+	}
 	if nativeStartHidden {
 		prepareNativeWindow(windowWidth, collapsedHeight)
 		runtime.WindowShow(a.ctx)
