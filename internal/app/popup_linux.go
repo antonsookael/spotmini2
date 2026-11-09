@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"os/exec"
@@ -153,6 +154,7 @@ func (a *App) togglePopupPanel(panel string) {
 		if !placed {
 			width = popupDefaultWidth
 		}
+		fmt.Printf("[popup] opening at %d,%d width %d (placed %v)\n", x, y, width, placed)
 		_, height := a.windowSize()
 		a.setWindowSize(width, height)
 		if placed {

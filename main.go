@@ -2,6 +2,9 @@ package main
 
 import (
 	"embed"
+	"flag"
+	"fmt"
+	"os"
 
 	"spotmini-gui/internal/app"
 	"spotmini-gui/internal/logging"
@@ -24,6 +27,19 @@ var assets embed.FS
 var icon []byte
 
 func main() {
+	// `spotmini -cmd next` talks to the spotmini already running instead
+	// of starting another: it's what the desktop's key binds run on Linux
+	// (see SendCommand).
+	cmd := flag.String("cmd", "", "send this command to the running spotmini and exit (Linux)")
+	flag.Parse()
+	if *cmd != "" {
+		if err := app.SendCommand(*cmd); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if err := app.Run(assets, icon); err != nil {
 		// Via logging rather than println: a built app has no console
 		// attached, so the one message explaining why the window never

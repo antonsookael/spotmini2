@@ -2,7 +2,17 @@
 
 package app
 
-import "spotmini-gui/internal/playback"
+import (
+	"errors"
+
+	"spotmini-gui/internal/playback"
+)
+
+// SendCommand backs `spotmini -cmd`, which only the Linux build has a
+// socket for.
+func SendCommand(cmd string) error {
+	return errors.New("-cmd only works on Linux, where spotmini has a control socket")
+}
 
 // The control socket is Linux only: Windows and macOS keep the window
 // as the now-playing strip, and have nothing else on the desktop to

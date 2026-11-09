@@ -236,6 +236,26 @@ func (a *App) ipcPublish(state playback.PlaybackState, err error) {
 	}
 }
 
+// SendCommand is the client side, for `spotmini -cmd <action>`: it hands
+// one command to the running spotmini and returns. This is how the
+// desktop's own key binds reach the app - the X11 key grabs the hotkeys
+// are only fire under a Wayland compositor while an X11 window has
+// focus, and in popup mode the window is hidden nearly all the time.
+func SendCommand(cmd string) error {
+	if !slices.Contains(hotkeys.Actions, cmd) {
+		return fmt.Errorf("unknown command %q (one of %v)", cmd, hotkeys.Actions)
+	}
+	conn, err := net.DialTimeout("unix", ipcSocketPath(), 2*time.Second)
+	if err != nil {
+		return fmt.Errorf("spotmini isn't running (no socket at %s): %v", ipcSocketPath(), err)
+	}
+	defer conn.Close()
+	data, _ := json.Marshal(ipcCommand{Cmd: cmd})
+	conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
+	_, err = conn.Write(append(data, '\n'))
+	return err
+}
+
 // ipcArtist is the line under the title: the first artist, or the show
 // for a podcast episode.
 func ipcArtist(item playback.Track) string {
