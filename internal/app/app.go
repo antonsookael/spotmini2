@@ -110,6 +110,10 @@ type App struct {
 
 	topMu    sync.Mutex
 	topCache map[string]cachedTop
+
+	// The desktop's way in on Linux; nil elsewhere and when the socket
+	// couldn't be opened. See ipc_linux.go.
+	ipc *ipcServer
 }
 
 // New returns an App ready to be handed to Wails. Everything that needs
@@ -127,6 +131,10 @@ func (a *App) startup(ctx context.Context) {
 	a.stats = stats.Open()
 
 	a.restoreWindowPosition()
+
+	// Before the sign-in: a bar connecting early is told "signing in"
+	// by the first read instead of finding no socket.
+	a.startIPC()
 
 	// Claimed out here rather than inside the goroutine below: the
 	// frontend starts polling as soon as the page loads, which on a
@@ -183,6 +191,7 @@ func (a *App) startup(ctx context.Context) {
 // restore it.
 func (a *App) shutdown(ctx context.Context) {
 	a.saveWindowPosition()
+	a.stopIPC()
 }
 
 // domReady runs once the window and its page are up. Anything that

@@ -164,6 +164,8 @@ func (a *App) ToggleLoop() {
 // the underlying cause goes to the log.
 func (a *App) GetNowPlaying() (playback.PlaybackState, error) {
 	state, err := retryOnAuthFailure(a, playback.NowPlaying)
+	// Every read, failed or not, is what the desktop sees on Linux.
+	a.ipcPublish(state, err)
 	if err != nil {
 		logging.Printf("[command] now-playing read failed: %v", err)
 		return playback.PlaybackState{}, errors.New(failureMessage(err))
